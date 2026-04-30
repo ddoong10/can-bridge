@@ -1,0 +1,57 @@
+{
+  "name": "can-bridge",
+  "version": "0.1.0",
+  "description": "Move your conversation between Claude Code and Codex CLI without losing context. Bidirectional adapter with tool-call schema translation.",
+  "type": "module",
+  "bin": {
+    "harness": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "harness": "node dist/cli/index.js",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude",
+    "codex",
+    "codex-cli",
+    "openai",
+    "anthropic",
+    "llm",
+    "agent",
+    "conversation",
+    "context",
+    "context-transfer",
+    "session",
+    "rollout",
+    "jsonl",
+    "tool-use"
+  ],
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddoong10/can-bridge.git"
+  },
+  "homepage": "https://github.com/ddoong10/can-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/ddoong10/can-bridge/issues"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
