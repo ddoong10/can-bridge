@@ -268,14 +268,19 @@ function responseItemToMessage(
   if (itemType === "function_call_output") {
     const callId =
       typeof payload.call_id === "string" ? payload.call_id : undefined;
-    const output =
+    const rawOutput =
       typeof payload.output === "string"
         ? payload.output
         : JSON.stringify(payload.output);
+    // The inject side encodes Anthropic isError:true by prefixing "[error] ".
+    // Decode it back so a Codex → Norm → ... round-trip is lossless.
+    const errorPrefix = "[error] ";
+    const isError = rawOutput.startsWith(errorPrefix);
+    const output = isError ? rawOutput.slice(errorPrefix.length) : rawOutput;
     return {
       role: "user",
       content: [
-        { type: "tool_result", toolUseId: callId, output, isError: false },
+        { type: "tool_result", toolUseId: callId, output, isError },
       ],
       timestamp: ts,
     };

@@ -3,6 +3,60 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-04-30 - Claude Code (post-release iteration)
+
+### Status
+
+Closed the round-trip lossy translations and added Claude Code branch
+handling. 11/11 smoke tests passing. Cross-checked the niche with Codex.
+
+### Changed
+
+- `src/adapters/codex.ts` — `responseItemToMessage()` now decodes the
+  `[error] ` prefix on `function_call_output` payloads back to
+  `tool_result.isError = true`. Norm → Codex → Norm preserves the error
+  flag verbatim (was previously lossy).
+- `src/adapters/claude-code.ts` — `extract()` rewritten to walk
+  `parentUuid` trees instead of file order: indexes every line, walks
+  past non-message intermediaries (attachment / permission-mode /
+  file-history-snapshot), finds all leaves, picks the leaf with the
+  latest timestamp, and reconstructs the chain back to root. Single-chain
+  files are byte-for-byte identical to the previous behavior
+  (regression-tested).
+- `tests/smoke.test.mjs` — added 3 tests (8 → 11):
+  isError round-trip, branch latest-leaf reconstruction, linear
+  single-chain regression guard.
+- `README.md` — added a "Related work" section citing
+  `ai-session-bridge`, `codex-bridge-mcp`, `ccb` (concrete prior-art),
+  updated branches/limits text to reflect the new behavior, and noted
+  the planned `harness doctor` subcommand.
+- `docs/OPEN_QUESTIONS.md` — moved isError + branches to "Resolved",
+  added prior-art section, added `harness doctor` to Still unresolved.
+
+### Verified
+
+- `npm test`: 11/11 pass.
+- `npx tsc`: 0 errors.
+- Round-trip tests use synthetic JSONL fixtures so they're hermetic
+  (no dependency on the user's local sessions).
+
+### Codex cross-check (background ask_codex)
+
+Codex returned three concrete prior-art repos and called out a single
+likely v1 blocker: a `harness doctor` schema-drift detector. Captured as
+a v1 task. Codex also recommended re-positioning the README as
+"multi-agent handoff infrastructure" rather than a pure converter
+utility — partially adopted (Related work section + doctor language);
+the headline currently keeps the utility framing for clarity. Worth
+revisiting when the project actually has multi-agent demos to show.
+
+### Next Agent
+
+- v1 task at the top of the queue: `harness doctor` (schema-drift
+  detector) — see OPEN_QUESTIONS.md for the rationale.
+- If you adopt the "multi-agent handoff infrastructure" positioning, the
+  README headline + first paragraph need a coordinated rewrite.
+
 ## 2026-04-30 - Codex
 
 ### Status

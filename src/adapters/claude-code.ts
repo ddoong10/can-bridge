@@ -50,8 +50,20 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
     const raw = await fs.readFile(filePath, "utf8");
     const lines = raw.split("\n").filter((l) => l.trim().length > 0);
 
-    const messagesById = new Map<string, NormalizedMessage>();
-    const orderedMessages: NormalizedMessage[] = [];
+    // Phase 1 — index every line by uuid + collect session meta.
+    type LineEntry = {
+      uuid: string;
+      parentUuid: string | null;
+      type: string;
+      timestamp?: string;
+      msg?: {
+        id?: string;
+        role?: string;
+        model?: string;
+        content?: unknown;
+      };
+    };
+    const byUuid = new Map<string, LineEntry>();
     let sessionId: string | undefined;
     let model: string | undefined;
     let firstTimestamp: string | undefined;
@@ -66,50 +78,140 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
         continue;
       }
 
-      const type = entry.type;
-      if (typeof type !== "string") continue;
-
       if (typeof entry.sessionId === "string") sessionId ??= entry.sessionId;
       if (typeof entry.cwd === "string") cwd ??= entry.cwd;
       if (typeof entry.timestamp === "string") {
         firstTimestamp ??= entry.timestamp;
       }
 
-      if (IGNORED_TYPES.has(type)) continue;
-      if (type !== "user" && type !== "assistant") continue;
+      const type = entry.type;
+      if (typeof type !== "string") continue;
+      const uuid = typeof entry.uuid === "string" ? entry.uuid : null;
+      if (!uuid) continue;
 
-      const msg = entry.message as
-        | { id?: string; role?: string; model?: string; content?: unknown }
-        | undefined;
-      if (!msg) continue;
+      byUuid.set(uuid, {
+        uuid,
+        parentUuid:
+          typeof entry.parentUuid === "string" ? entry.parentUuid : null,
+        type,
+        timestamp:
+          typeof entry.timestamp === "string" ? entry.timestamp : undefined,
+        msg: entry.message as LineEntry["msg"],
+      });
+    }
 
+    // Phase 2 — pick out the message-bearing entries.
+    const messageEntries: LineEntry[] = [];
+    for (const e of byUuid.values()) {
+      if (IGNORED_TYPES.has(e.type)) continue;
+      if (e.type !== "user" && e.type !== "assistant") continue;
+      if (!e.msg) continue;
+      messageEntries.push(e);
+    }
+
+    if (messageEntries.length === 0) {
+      return {
+        schemaVersion: "0.1",
+        source: {
+          tool: "claude-code",
+          model,
+          sessionId,
+          capturedAt: firstTimestamp,
+          cwd,
+        },
+        messages: [],
+        metadata: { sourceFile: filePath },
+      };
+    }
+
+    // Walk parentUuid skipping non-message intermediaries (attachments,
+    // hooks, snapshots) until we hit another user/assistant entry.
+    const messageParentCache = new Map<string, string | null>();
+    const messageParent = (uuid: string): string | null => {
+      const cached = messageParentCache.get(uuid);
+      if (cached !== undefined) return cached;
+      const visited = new Set<string>([uuid]);
+      let cur: string | null = byUuid.get(uuid)?.parentUuid ?? null;
+      while (cur && !visited.has(cur)) {
+        visited.add(cur);
+        const parent = byUuid.get(cur);
+        if (!parent) break;
+        if (
+          (parent.type === "user" || parent.type === "assistant") &&
+          parent.msg
+        ) {
+          messageParentCache.set(uuid, parent.uuid);
+          return parent.uuid;
+        }
+        cur = parent.parentUuid;
+      }
+      messageParentCache.set(uuid, null);
+      return null;
+    };
+
+    // Phase 3 — build children map among message entries.
+    const childrenOf = new Map<string, string[]>();
+    for (const e of messageEntries) {
+      const p = messageParent(e.uuid);
+      if (!p) continue;
+      const arr = childrenOf.get(p) ?? [];
+      arr.push(e.uuid);
+      childrenOf.set(p, arr);
+    }
+
+    // Phase 4 — find leaves and pick the latest by timestamp. For a linear
+    // (single-chain) file there is exactly one leaf — file order preserved.
+    const leaves = messageEntries.filter((e) => !childrenOf.has(e.uuid));
+    const latestLeaf = leaves.reduce<LineEntry | null>((best, e) => {
+      if (!best) return e;
+      const bt = best.timestamp ?? "";
+      const et = e.timestamp ?? "";
+      return et > bt ? e : best;
+    }, null);
+
+    // Phase 5 — walk back from the chosen leaf to root, recording the chain.
+    const chainUuids: string[] = [];
+    if (latestLeaf) {
+      const chainVisited = new Set<string>();
+      let cur: string | null = latestLeaf.uuid;
+      while (cur && !chainVisited.has(cur)) {
+        chainVisited.add(cur);
+        chainUuids.unshift(cur);
+        cur = messageParent(cur);
+      }
+    }
+
+    // Phase 6 — materialize the chain into NormalizedMessages, coalescing
+    // multi-line assistant turns by message.id.
+    const messagesById = new Map<string, NormalizedMessage>();
+    const orderedMessages: NormalizedMessage[] = [];
+
+    for (const uuid of chainUuids) {
+      const e = byUuid.get(uuid);
+      if (!e || !e.msg) continue;
+      const msg = e.msg;
       if (typeof msg.model === "string") model ??= msg.model;
 
       const role =
         msg.role === "user" || msg.role === "assistant"
           ? msg.role
-          : (type as "user" | "assistant");
-
+          : (e.type as "user" | "assistant");
       const blocks = normalizeContent(msg.content);
       if (blocks.length === 0) continue;
 
       const messageId = typeof msg.id === "string" ? msg.id : undefined;
-      const timestamp =
-        typeof entry.timestamp === "string" ? entry.timestamp : undefined;
-
       if (messageId && messagesById.has(messageId)) {
-        const existing = messagesById.get(messageId)!;
-        existing.content.push(...blocks);
+        messagesById.get(messageId)!.content.push(...blocks);
         continue;
       }
 
       const normalized: NormalizedMessage = {
         role,
         content: blocks,
-        timestamp,
+        timestamp: e.timestamp,
         metadata: {
-          uuid: entry.uuid,
-          parentUuid: entry.parentUuid,
+          uuid: e.uuid,
+          parentUuid: e.parentUuid,
           messageId,
         },
       };

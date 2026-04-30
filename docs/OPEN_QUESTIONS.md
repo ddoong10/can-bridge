@@ -138,7 +138,45 @@ five real rollouts contained tool calls. Inspected one directly:
   cwd, version, message}`) is sufficient — no sqlite/index registration
   needed on the Claude Code side.
 
+## Resolved 2026-04-30 (continued — round-trip closure & branch handling)
+
+- **Codex `function_call_output` extract decodes `[error] ` prefix.**
+  When a `function_call_output` payload starts with `[error] `, the prefix
+  is stripped and the resulting `tool_result` block has `isError: true`.
+  Closes the lossy translation noted earlier — Norm → Codex → Norm now
+  preserves `isError`. Test: `tests/smoke.test.mjs` "isError:true round-trips through Codex".
+  **Caveat (architect-flagged)**: if a real tool happens to emit output
+  whose literal first 8 characters are `[error] ` AND `isError === false`,
+  the round-trip will mis-classify it as `isError: true`. No real case
+  observed yet; if encountered, switch to a double-prefix escape or a
+  side-channel field.
+- **Claude Code `parentUuid` branch handling.** `extract()` now indexes
+  every line by uuid, walks parent chains skipping non-message
+  intermediaries (attachment/permission-mode/file-history-snapshot), finds
+  all leaves, picks the leaf with the latest timestamp, and walks the
+  chain back to root. Single-chain files behave exactly as before
+  (regression-tested). Test: "extract picks the latest-leaf branch when a
+  session has multiple branches" + "extract preserves linear single-chain
+  ordering".
+
+## Prior art (cross-checked with Codex 2026-04-30)
+
+The closest neighbor we found is
+[`bakhtiersizhaev/ai-session-bridge`](https://github.com/bakhtiersizhaev/ai-session-bridge):
+direct Claude Code ↔ Codex JSONL conversion with tool-call mapping. Per
+its own README, Claude → Codex resume is **"not yet verified"** —
+`can-bridge` confirmed both directions end-to-end on a real machine. Two
+adjacent projects exist in nearby spaces:
+[`Urus1201/codex-bridge-mcp`](https://github.com/Urus1201/codex-bridge-mcp)
+(read-only via MCP) and
+[`cx994/ccb`](https://github.com/cx994/ccb) (orchestration UX).
+
 ## Still unresolved
+- [ ] **`harness doctor`** — schema-drift detector. Scan a session file
+      for known structural markers (e.g. session_meta.payload.id,
+      response_item content blocks of type input_text/output_text); exit
+      non-zero with a punch-list if format has drifted. Most-likely v1
+      blocker per Codex prior-art review (silent failures kill trust).
 - [ ] Long contexts: at what message count do we want to auto-summarize
       before injecting? Probably model/target-dependent.
 - [ ] System prompts: Claude Code may have implicit system prompts

@@ -146,11 +146,22 @@ The `arguments` field on the OpenAI side is a JSON-encoded **string**, not
 an object. The `is_error` flag on the Anthropic side has no OpenAI
 counterpart and is encoded into the output text.
 
+## Related work
+
+A few neighbors in the niche, found via cross-tool research:
+
+- [bakhtiersizhaev/ai-session-bridge](https://github.com/bakhtiersizhaev/ai-session-bridge) — closest direct comparison. Converts Claude Code ↔ Codex JSONL with tool-call mapping. As of this writing, says Claude → Codex resume is "not yet verified" — `can-bridge` confirmed both directions end-to-end on a real machine (see [Verified behavior](#verified-behavior)).
+- [Urus1201/codex-bridge-mcp](https://github.com/Urus1201/codex-bridge-mcp) — Claude reads Codex history via MCP. Read-only bridge, not file transfer.
+- [cx994/ccb](https://github.com/cx994/ccb) — Claude/Codex collaboration workflow with persistent context. Different problem (orchestration UX) but adjacent.
+
+If you ship one of these, please file a PR on this section.
+
 ## Known v0.1 limits
 
-- **Branches are not handled.** Claude Code uses `parentUuid` to record
-  conversation trees; we iterate file order. Multi-branch sessions get
-  flattened.
+- **Claude Code branches** — when a session has multiple `parentUuid`
+  branches, we follow the **latest-leaf chain** (newest leaf by
+  timestamp, walking back to root). Older sibling branches are dropped.
+  Single-chain sessions behave exactly as before.
 - **Thinking blocks are dropped on cross-tool transfer.** They are signed
   artifacts of the source model and don't make sense in another model's
   context.
@@ -158,6 +169,10 @@ counterpart and is encoded into the output text.
   back to `"unknown"` in Codex's `threads` table. No functional impact.
 - **Auto-resume by id is not exposed by Claude Code.** The injected file
   shows up in `claude --resume`'s picker; user picks manually.
+- **No schema-drift detector yet.** If either tool ships a format change,
+  `harness pipe` will silently emit a stale shape that may fail at resume
+  time. A `harness doctor` subcommand to validate before write is on the
+  v1 list.
 
 ## Architecture
 

@@ -395,6 +395,163 @@ test("CodexAdapter inject preserves tool_use call_id round-trip", async () => {
   await fs.unlink(result.locator).catch(() => {});
 });
 
+test("isError:true round-trips through Codex (inject encodes, extract decodes)", async () => {
+  const norm = {
+    schemaVersion: "0.1",
+    source: { tool: "test", cwd: process.cwd() },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "call_err_1",
+            name: "shell",
+            input: { command: "exit 7" },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            toolUseId: "call_err_1",
+            output: "command failed: exit code 7",
+            isError: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  const codex = new CodexAdapter();
+  const result = await codex.inject(norm);
+
+  // Confirm the wire format encodes the error prefix.
+  const raw = await fs.readFile(result.locator, "utf8");
+  assert.match(raw, /\[error\] command failed: exit code 7/);
+
+  // Re-extract and confirm the flag is recovered.
+  const re = await codex.extract(result.locator);
+  const trMsg = re.messages.find((m) =>
+    m.content.some((b) => b.type === "tool_result"),
+  );
+  assert.ok(trMsg, "expected a tool_result message after re-extract");
+  const trBlock = trMsg.content.find((b) => b.type === "tool_result");
+  assert.equal(trBlock.isError, true);
+  assert.equal(trBlock.output, "command failed: exit code 7"); // prefix stripped
+
+  await fs.unlink(result.locator).catch(() => {});
+});
+
+test("ClaudeCodeAdapter extract picks the latest-leaf branch when a session has multiple branches", async () => {
+  // Synthetic Claude Code JSONL with two assistant branches off the same
+  // user message. The "newer" branch (later timestamp) should win; the
+  // older branch should be entirely absent from the extracted transcript.
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-branch-"));
+  const filePath = path.join(tempDir, "branch-test.jsonl");
+
+  const rootUuid = "00000000-0000-0000-0000-000000000001";
+  const oldLeafUuid = "00000000-0000-0000-0000-000000000002";
+  const newLeafUuid = "00000000-0000-0000-0000-000000000003";
+  const lines = [
+    {
+      type: "user",
+      uuid: rootUuid,
+      parentUuid: null,
+      timestamp: "2026-04-01T00:00:00.000Z",
+      sessionId: "branch-test",
+      cwd: tempDir,
+      message: { role: "user", content: "Hello" },
+    },
+    {
+      type: "assistant",
+      uuid: oldLeafUuid,
+      parentUuid: rootUuid,
+      timestamp: "2026-04-01T00:00:01.000Z",
+      sessionId: "branch-test",
+      cwd: tempDir,
+      message: {
+        id: "msg_old",
+        role: "assistant",
+        model: "claude-test",
+        content: [{ type: "text", text: "OLD answer" }],
+      },
+    },
+    {
+      type: "assistant",
+      uuid: newLeafUuid,
+      parentUuid: rootUuid,
+      timestamp: "2026-04-01T00:00:05.000Z",
+      sessionId: "branch-test",
+      cwd: tempDir,
+      message: {
+        id: "msg_new",
+        role: "assistant",
+        model: "claude-test",
+        content: [{ type: "text", text: "NEW answer" }],
+      },
+    },
+  ];
+  await fs.writeFile(
+    filePath,
+    lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+    "utf8",
+  );
+
+  const adapter = new ClaudeCodeAdapter();
+  const ctx = await adapter.extract(filePath);
+
+  assert.equal(ctx.messages.length, 2, "should pick exactly one branch (root + leaf)");
+  assert.equal(ctx.messages[0].role, "user");
+  assert.equal(ctx.messages[0].content[0].text, "Hello");
+  assert.equal(ctx.messages[1].role, "assistant");
+  assert.equal(
+    ctx.messages[1].content[0].text,
+    "NEW answer",
+    "should pick the newer branch by timestamp",
+  );
+  // Make sure the OLD branch never appears.
+  for (const m of ctx.messages) {
+    for (const b of m.content) {
+      if (b.type === "text") assert.ok(!b.text.includes("OLD"));
+    }
+  }
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("ClaudeCodeAdapter extract preserves linear single-chain ordering", async () => {
+  // Regression guard: a non-branched file must come out in file order.
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-linear-"));
+  const filePath = path.join(tempDir, "linear-test.jsonl");
+
+  const u = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
+  const lines = [
+    { type: "user",      uuid: u(1), parentUuid: null,   timestamp: "2026-04-01T00:00:00.000Z", sessionId: "lin", cwd: tempDir, message: { role: "user", content: "first" } },
+    { type: "assistant", uuid: u(2), parentUuid: u(1),   timestamp: "2026-04-01T00:00:01.000Z", sessionId: "lin", cwd: tempDir, message: { id: "a", role: "assistant", model: "claude-test", content: [{ type: "text", text: "reply 1" }] } },
+    { type: "user",      uuid: u(3), parentUuid: u(2),   timestamp: "2026-04-01T00:00:02.000Z", sessionId: "lin", cwd: tempDir, message: { role: "user", content: "second" } },
+    { type: "assistant", uuid: u(4), parentUuid: u(3),   timestamp: "2026-04-01T00:00:03.000Z", sessionId: "lin", cwd: tempDir, message: { id: "b", role: "assistant", model: "claude-test", content: [{ type: "text", text: "reply 2" }] } },
+  ];
+  await fs.writeFile(
+    filePath,
+    lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+    "utf8",
+  );
+
+  const adapter = new ClaudeCodeAdapter();
+  const ctx = await adapter.extract(filePath);
+
+  assert.equal(ctx.messages.length, 4);
+  assert.deepEqual(
+    ctx.messages.map((m) => m.content[0].text),
+    ["first", "reply 1", "second", "reply 2"],
+  );
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
 test("mailbox stores agent messages and filters inbox/thread views", async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "harness-mailbox-"));
   const mailbox = path.join(temp, ".agent-chat", "messages.jsonl");
