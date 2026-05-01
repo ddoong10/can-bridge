@@ -4,7 +4,7 @@
   "description": "Move your conversation between Claude Code and Codex CLI without losing context. Bidirectional adapter with tool-call schema translation.",
   "type": "module",
   "bin": {
-    "can-bridge": "./dist/cli/index.js"
+    "can-bridge": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
