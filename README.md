@@ -4,8 +4,8 @@
 > context.** A small TypeScript CLI that extracts a session from one tool,
 > normalizes it, and injects it into the other — both directions.
 
-[![tests](https://img.shields.io/badge/tests-37%2F37%20passing-brightgreen)](#verified-behavior)
-[![status](https://img.shields.io/badge/status-v0.2%20portable%20handoff-blue)](#what-works)
+[![tests](https://img.shields.io/badge/tests-39%2F39%20passing-brightgreen)](#verified-behavior)
+[![status](https://img.shields.io/badge/status-v0.2.1%20portable%20handoff-blue)](#what-works)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ## Why
@@ -103,6 +103,39 @@ can-bridge pipe \
 #   claude --print --resume <printed-uuid> "<prompt>"
 ```
 
+## Pick The Right Session
+
+Session IDs are random UUIDs, so `list` shows human-readable context by
+default:
+
+```bash
+can-bridge list --from codex --cwd --limit 10
+can-bridge list --from claude-code --cwd --limit 10
+```
+
+Example output:
+
+```text
+1. 2026-05-01 17:04:04Z  019ddd6b-...  (317 messages, model: gpt-5.5)
+   project: can-bridge
+   cwd: D:\work\can-bridge
+   latest user: "Why do several Codex sessions show the same latest user?"
+   latest assistant: "They came from the same imported Claude Code session..."
+   origin: can-bridge / can-bridge-import / from claude-code:8131efb2...
+```
+
+Useful flags:
+
+- `--cwd` filters to sessions whose recorded working directory matches the
+  current folder. Pass `--cwd <path>` to filter another folder.
+- `--limit <n>` controls how many recent sessions are shown.
+- `--all` shows every known session.
+- `--json` prints machine-readable session summaries.
+
+If several Codex sessions have the same `latest user`, they are often
+separate imports/checkpoints from the same original session. Check
+`latest assistant`, `message count`, and `origin` to choose the right one.
+
 If a target rejects an authored file (rare; means the format has changed),
 fall back to a portable text seed any LLM can take:
 
@@ -121,21 +154,36 @@ or Codex).
 **Sender:**
 
 ```bash
+cd <project>
+
 can-bridge share \
-  --from claude-code --latest --redact --include-repo-ref \
-  --out my-session.cbctx
+  --from <codex|claude-code> --latest --redact \
+  --include-repo-ref --include-patch \
+  --out handoff.cbctx
 # → Wrote my-session.cbctx (484 messages, repo: 731842b...)
 # → Share this file with your friend.
 ```
 
-**Receiver (any machine, either tool):**
+Send `handoff.cbctx` over KakaoTalk, Slack, email, Discord, or any file
+transfer channel.
+
+**Receiver (any machine, any folder name, either tool):**
+
+The receiver should open or clone the same repository, but the absolute path
+and folder name do **not** need to match the sender's machine.
 
 ```bash
-# 1. cd to the project folder you want this conversation attached to
-cd ~/Desktop/same-project
+npm install -g can-bridge
 
-# 2. import — the new session is keyed under YOUR cwd, not the sender's
-can-bridge import --to codex --in ~/Downloads/my-session.cbctx
+# The folder name can be different from the sender's folder.
+git clone <repo-url> <any-folder-name>
+cd <any-folder-name>
+```
+
+Import into Codex:
+
+```bash
+can-bridge import --to codex --in ~/Downloads/handoff.cbctx
 #   Originally from claude-code (claude-opus-4-7), 484 messages.
 #   Original session: 8131efb2-...
 #   Original cwd: C:\Users\ddoon\Desktop\context_switching
@@ -146,10 +194,22 @@ can-bridge import --to codex --in ~/Downloads/my-session.cbctx
 codex resume <printed-uuid>
 ```
 
+Or import into Claude Code:
+
+```bash
+can-bridge import --to claude-code --in ~/Downloads/handoff.cbctx
+claude --resume <printed-uuid>
+```
+
 The `.cbctx` file location doesn't matter — what matters is **the cwd
 you `cd` into before running `import`**. That cwd is where the new
-session ends up. (Pass `--cwd <path>` or `--keep-source-cwd` to
-override.)
+session ends up. A different username, parent directory, drive, or folder
+name is fine as long as the receiver is inside the intended project repo.
+
+If the receiver imports from a random folder, the conversation still imports,
+but the agent may not find the referenced files. Pass `--cwd <path>` to set a
+specific receiver cwd. Avoid `--keep-source-cwd` unless the receiver really
+has the sender's original path.
 
 What goes in the `.cbctx` (`can-bridge.context.v1` schema):
 
@@ -232,6 +292,9 @@ sessions (skips if absent). It verifies:
    compatibility scores and mismatch codes.
 8. **Continue command** — `--latest` selects the newest source session by
    `updatedAt` and runs doctor preflight before injection.
+9. **Human-readable session list** — `list` shows newest sessions with cwd,
+   project, message count, model, latest user/assistant previews, and import
+   origin when available.
 
 ### Live end-to-end demos (2026-04-30)
 
