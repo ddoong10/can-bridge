@@ -54,3 +54,11 @@ target *vendor-prefixed* shapes (`sk-ant-`, `sk-`, `gh*_`, `AKIA`,
 `AIza`, `xox*-`), structural shapes (JWT, Bearer), and explicit key=value
 pairs. We deliberately reject low-confidence heuristics like "any 32-char
 hex" — too many false positives (commit hashes, file digests, UUIDs).
+
+## D-0007 - Position Can-Bridge As Context Interchange First
+
+GitHub already has active live Claude/Codex bridge projects and MCP wrappers.
+Can-Bridge should lead with the narrower, defensible core: extract, normalize,
+redact, and inject coding-agent context with explicit loss boundaries. Live
+agent routing, editor sync, and MCP servers should wrap the core instead of
+replacing it.

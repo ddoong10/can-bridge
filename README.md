@@ -4,7 +4,7 @@
 > context.** A small TypeScript CLI that extracts a session from one tool,
 > normalizes it, and injects it into the other — both directions.
 
-[![tests](https://img.shields.io/badge/tests-8%2F8%20passing-brightgreen)](#verified-behavior)
+[![tests](https://img.shields.io/badge/tests-11%2F11%20passing-brightgreen)](#verified-behavior)
 [![status](https://img.shields.io/badge/status-v0.1%20bidirectional-blue)](#what-works)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -19,7 +19,7 @@ disk. Different formats, no shared interchange. So if you want to:
 - Hand a session off to a teammate using the other tool
 
 …you have to copy-paste manually, losing tool calls, structure, and
-fidelity. **Harness fixes this** — and goes the extra mile by translating
+fidelity. **can-bridge fixes this** — and goes the extra mile by translating
 Anthropic's `tool_use` / `tool_result` blocks to OpenAI Responses
 `function_call` / `function_call_output` items in both directions, so
 agents pick up where the other left off.
@@ -106,6 +106,13 @@ node dist/cli/index.js mailbox thread --thread <thread-id>
 Use `docs/HANDOFF.md` for durable handoffs. Use the mailbox for live,
 short-lived agent conversation.
 
+## Related work
+
+This space already has live Claude/Codex bridges, MCP wrappers, editor sync
+extensions, and persistent memory systems. can-bridge is positioned as a
+loss-aware context interchange core rather than a live-agent router. See
+[docs/RELATED_PROJECTS.md](docs/RELATED_PROJECTS.md) for the current scan.
+
 ## Verified behavior
 
 `npm test` runs `tests/smoke.test.mjs` end-to-end against real local
@@ -117,7 +124,11 @@ sessions (skips if absent). It verifies:
 3. **Round-trip via Claude Code** — text + `tool_use` + `tool_result` survive
    through `inject → re-extract` with id, name, input, output preserved.
 4. **Round-trip via Codex** — same blocks survive `inject → re-extract` with
-   `call_id` preserved.
+   `call_id` and `[error] ` / `isError` preserved.
+5. **Claude Code branches** — `parentUuid` trees reconstruct the latest-leaf
+   chain instead of blindly flattening file order.
+6. **Agent mailbox** — local mailbox send, inbox, thread, and all-message
+   flows are covered.
 
 ### Live end-to-end demos (2026-04-30)
 
@@ -145,16 +156,6 @@ sync (memory/summary cache); the main rollout append still succeeds.
 The `arguments` field on the OpenAI side is a JSON-encoded **string**, not
 an object. The `is_error` flag on the Anthropic side has no OpenAI
 counterpart and is encoded into the output text.
-
-## Related work
-
-A few neighbors in the niche, found via cross-tool research:
-
-- [bakhtiersizhaev/ai-session-bridge](https://github.com/bakhtiersizhaev/ai-session-bridge) — closest direct comparison. Converts Claude Code ↔ Codex JSONL with tool-call mapping. As of this writing, says Claude → Codex resume is "not yet verified" — `can-bridge` confirmed both directions end-to-end on a real machine (see [Verified behavior](#verified-behavior)).
-- [Urus1201/codex-bridge-mcp](https://github.com/Urus1201/codex-bridge-mcp) — Claude reads Codex history via MCP. Read-only bridge, not file transfer.
-- [cx994/ccb](https://github.com/cx994/ccb) — Claude/Codex collaboration workflow with persistent context. Different problem (orchestration UX) but adjacent.
-
-If you ship one of these, please file a PR on this section.
 
 ## Known v0.1 limits
 
@@ -202,4 +203,5 @@ tests/
 docs/
   OPEN_QUESTIONS.md            Format questions: resolved vs still open
   PRESENTATION_NOTES.md        Talking points for live demo / writeup
+  RELATED_PROJECTS.md          Adjacent projects and positioning notes
 ```

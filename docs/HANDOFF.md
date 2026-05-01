@@ -3,6 +3,41 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-04-30 - Codex
+
+### Status
+
+Completed a related-project scan and updated positioning docs.
+
+### Changed
+
+- Added `docs/RELATED_PROJECTS.md` with closest GitHub overlaps:
+  `ai-session-bridge`, AgentBridge, Codex Bridge variants, ccb, HeyAgent,
+  PAL MCP, CoBridge, RexCLI, codeplow, and context-file interop tools.
+- Kept the README related-work section as a single pointer to
+  `docs/RELATED_PROJECTS.md` and removed the duplicate inline list.
+- Updated `README.md` test badge/verified-behavior text to 11/11.
+- Updated `TASK_CONTEXT.md` to reflect branch handling, `[error] ` decode,
+  and the current v1 queue.
+- Added `D-0007` to `docs/DECISIONS.md`.
+
+### Verified
+
+- Searched GitHub and web results for Claude/Codex bridge, MCP wrapper,
+  context handoff, and `AGENTS.md`/`CLAUDE.md` sync projects.
+- Reviewed high-signal README pages for the projects captured in
+  `docs/RELATED_PROJECTS.md`.
+- `npm test`: 11/11 pass.
+
+### Next Agent
+
+- Keep positioning as "context interchange core" unless the code grows a real
+  live bridge.
+- If adding a live bridge, compare directly against AgentBridge and
+  `codex-claude-bridge` first.
+- If adding an MCP layer, compare directly against `codex-mcp-server`,
+  `codex-bridge`, `codex-bridge-mcp`, and PAL MCP first.
+
 ## 2026-04-30 - Claude Code (post-release iteration)
 
 ### Status
