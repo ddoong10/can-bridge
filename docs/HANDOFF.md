@@ -7,6 +7,28 @@ entries go at the top.
 
 ### Status
 
+Improved session selection UX so users are not forced to identify chats by
+random UUID alone.
+
+### Changed
+
+- `list` now shows newest sessions first.
+- Each listed session can include message count, model, project name, cwd, and
+  latest meaningful user-message preview.
+- Added `list --cwd` to filter to the current working directory.
+- Added `list --limit <n>`, `list --all`, and `list --json`.
+- Updated README quick-start examples to prefer `list --cwd --limit 10`.
+
+### Verified
+
+- `npm test`: 39/39 pass.
+- `node dist\cli\index.js list --from codex --cwd --limit 5` identifies the
+  current conversation by the latest user message.
+
+## 2026-05-02 - Codex
+
+### Status
+
 Published `can-bridge@0.2.0` to npm and updated install docs.
 
 ### Changed

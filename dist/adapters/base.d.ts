@@ -13,6 +13,8 @@ export interface SessionSummary {
     title?: string;
     updatedAt?: string;
     messageCount?: number;
+    model?: string;
+    cwd?: string;
 }
 export interface InjectionResult {
     /** Where the data was written, or what id was created. */

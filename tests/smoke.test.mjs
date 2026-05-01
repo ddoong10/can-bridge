@@ -16,7 +16,7 @@ import {
   diagnoseSession,
   formatDoctorResult,
 } from "../dist/doctor/session-doctor.js";
-import { pickLatestSession } from "../dist/cli/index.js";
+import { formatSessionList, pickLatestSession } from "../dist/cli/index.js";
 import { redactText, redactContext } from "../dist/transform/redactor.js";
 import {
   buildPackage,
@@ -327,6 +327,38 @@ test("continue helper picks the newest source session by updatedAt", async () =>
 
   const latest = await pickLatestSession(source);
   assert.equal(latest.id, "newest");
+});
+
+test("session list formatter shows human-readable context", () => {
+  const out = formatSessionList([
+    {
+      id: "abc-123",
+      updatedAt: "2026-05-01T03:00:00.000Z",
+      title: "Move this conversation to my friend's Claude Code",
+      messageCount: 12,
+      model: "gpt-test",
+      cwd: "C:\\Users\\friend\\Desktop\\context_switching",
+    },
+  ]);
+
+  assert.match(out, /abc-123/);
+  assert.match(out, /12 messages/);
+  assert.match(out, /model: gpt-test/);
+  assert.match(out, /project: context_switching/);
+  assert.match(out, /latest user: "Move this conversation/);
+});
+
+test("session list formatter respects limit", () => {
+  const out = formatSessionList(
+    [
+      { id: "one", updatedAt: "2026-05-01T03:00:00.000Z" },
+      { id: "two", updatedAt: "2026-05-01T02:00:00.000Z" },
+    ],
+    { limit: 1 },
+  );
+
+  assert.match(out, /one/);
+  assert.doesNotMatch(out, /two/);
 });
 
 test("ClaudeCodeAdapter writes a session that re-extracts to the same shape", async () => {

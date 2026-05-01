@@ -225,10 +225,12 @@ export class ClaudeCodeAdapter {
             for (const f of entries) {
                 if (!f.endsWith(".jsonl"))
                     continue;
-                const stat = await fs.stat(path.join(full, f));
+                const filePath = path.join(full, f);
+                const stat = await fs.stat(filePath);
                 out.push({
                     id: f.replace(/\.jsonl$/, ""),
                     updatedAt: stat.mtime.toISOString(),
+                    ...(await summarizeClaudeSession(filePath)),
                 });
             }
         }
@@ -297,6 +299,78 @@ export class ClaudeCodeAdapter {
 function cwdToProjectFolder(cwd) {
     return cwd.replace(/[:\\\/_]/g, "-");
 }
+async function summarizeClaudeSession(filePath) {
+    let raw;
+    try {
+        raw = await fs.readFile(filePath, "utf8");
+    }
+    catch {
+        return {};
+    }
+    let title;
+    let model;
+    let cwd;
+    let messageCount = 0;
+    for (const line of raw.split("\n")) {
+        if (line.trim().length === 0)
+            continue;
+        let entry;
+        try {
+            entry = JSON.parse(line);
+        }
+        catch {
+            continue;
+        }
+        if (entry.isCanBridgeFence === true)
+            continue;
+        if (typeof entry.cwd === "string")
+            cwd ??= entry.cwd;
+        const type = entry.type;
+        if (type !== "user" && type !== "assistant")
+            continue;
+        const msg = entry.message;
+        if (!msg)
+            continue;
+        if (typeof msg.model === "string")
+            model ??= msg.model;
+        const role = msg.role === "user" || msg.role === "assistant" ? msg.role : type;
+        const text = claudeContentText(msg.content);
+        if (text.length === 0)
+            continue;
+        messageCount++;
+        if (role === "user" && isTitleCandidate(text)) {
+            title = text;
+        }
+    }
+    return {
+        title: title ? compactPreview(title) : undefined,
+        messageCount,
+        model,
+        cwd,
+    };
+}
+function claudeContentText(content) {
+    if (typeof content === "string")
+        return content;
+    if (!Array.isArray(content))
+        return "";
+    const parts = [];
+    for (const item of content) {
+        if (!item || typeof item !== "object")
+            continue;
+        const block = item;
+        if (block.type === "text" && typeof block.text === "string") {
+            parts.push(block.text);
+        }
+    }
+    return parts.join("\n");
+}
+function isTitleCandidate(text) {
+    const trimmed = text.trim();
+    return (trimmed.length > 0 &&
+        !trimmed.startsWith(UNTRUSTED_FENCE_HEADER) &&
+        !trimmed.startsWith("<environment_context>"));
+}
 function normalizeContent(content) {
     if (typeof content === "string") {
         return content.length > 0 ? [{ type: "text", text: content }] : [];
@@ -344,6 +418,12 @@ function normalizeContent(content) {
         }
     }
     return blocks;
+}
+function compactPreview(text, max = 120) {
+    const compact = text.replace(/\s+/g, " ").trim();
+    if (compact.length <= max)
+        return compact;
+    return compact.slice(0, max - 3).trimEnd() + "...";
 }
 function buildClaudeJsonl(context, sessionId, cwd, model) {
     const out = [];

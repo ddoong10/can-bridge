@@ -6,6 +6,7 @@ import type {
   SourceAdapter,
   TargetAdapter,
   InjectionResult,
+  SessionSummary,
 } from "./base.js";
 import type {
   NormalizedContext,
@@ -110,10 +111,16 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
   }
 
   async listSessions() {
-    const out: { id: string; updatedAt?: string }[] = [];
-    await walkRollouts(CODEX_SESSIONS_DIR, async (file, stat) => {
+    const out: SessionSummary[] = [];
+    await walkRollouts(CODEX_SESSIONS_DIR, async (file, stat, fullPath) => {
       const m = file.match(/-([0-9a-f-]{36})\.jsonl$/i);
-      if (m && m[1]) out.push({ id: m[1], updatedAt: stat.mtime.toISOString() });
+      if (m && m[1]) {
+        out.push({
+          id: m[1],
+          updatedAt: stat.mtime.toISOString(),
+          ...(await summarizeCodexSession(fullPath)),
+        });
+      }
     });
     return out;
   }
@@ -330,6 +337,84 @@ async function walkRollouts(
       }
     }
   }
+}
+
+async function summarizeCodexSession(
+  filePath: string,
+): Promise<Partial<SessionSummary>> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return {};
+  }
+
+  let title: string | undefined;
+  let model: string | undefined;
+  let cwd: string | undefined;
+  let messageCount = 0;
+
+  for (const line of raw.split("\n")) {
+    if (line.trim().length === 0) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const payload = entry.payload as Record<string, unknown> | undefined;
+    if (entry.type === "session_meta" && payload) {
+      if (typeof payload.cwd === "string") cwd ??= payload.cwd;
+      continue;
+    }
+    if (entry.type === "turn_context" && payload) {
+      if (typeof payload.model === "string") model ??= payload.model;
+      continue;
+    }
+    if (entry.type !== "response_item" || !payload) continue;
+    if (payload.type !== "message") continue;
+
+    const role = payload.role;
+    const text = codexContentText(payload.content);
+    if (text.length === 0) continue;
+    messageCount++;
+    if (role === "user" && isTitleCandidate(text)) {
+      title = text;
+    }
+  }
+
+  return {
+    title: title ? compactPreview(title) : undefined,
+    messageCount,
+    model,
+    cwd,
+  };
+}
+
+function codexContentText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    const block = item as Record<string, unknown>;
+    if (
+      (block.type === "input_text" || block.type === "output_text") &&
+      typeof block.text === "string"
+    ) {
+      parts.push(block.text);
+    }
+  }
+  return parts.join("\n");
+}
+
+function isTitleCandidate(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.length > 0 &&
+    !trimmed.startsWith(UNTRUSTED_FENCE_HEADER) &&
+    !trimmed.startsWith("<environment_context>")
+  );
 }
 
 function responseItemToMessage(
@@ -552,4 +637,10 @@ function textOf(msg: NormalizedMessage): string {
     .map((b) => b.text)
     .join("\n\n")
     .trim();
+}
+
+function compactPreview(text: string, max = 120): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= max) return compact;
+  return compact.slice(0, max - 3).trimEnd() + "...";
 }

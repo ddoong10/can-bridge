@@ -6,6 +6,7 @@ import type {
   SourceAdapter,
   TargetAdapter,
   InjectionResult,
+  SessionSummary,
 } from "./base.js";
 import type {
   NormalizedContext,
@@ -240,7 +241,7 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
   }
 
   async listSessions() {
-    const out: { id: string; updatedAt?: string }[] = [];
+    const out: SessionSummary[] = [];
     let projectDirs: string[];
     try {
       projectDirs = await fs.readdir(CLAUDE_PROJECTS_DIR);
@@ -257,10 +258,12 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
       }
       for (const f of entries) {
         if (!f.endsWith(".jsonl")) continue;
-        const stat = await fs.stat(path.join(full, f));
+        const filePath = path.join(full, f);
+        const stat = await fs.stat(filePath);
         out.push({
           id: f.replace(/\.jsonl$/, ""),
           updatedAt: stat.mtime.toISOString(),
+          ...(await summarizeClaudeSession(filePath)),
         });
       }
     }
@@ -345,6 +348,81 @@ function cwdToProjectFolder(cwd: string): string {
   return cwd.replace(/[:\\\/_]/g, "-");
 }
 
+async function summarizeClaudeSession(
+  filePath: string,
+): Promise<Partial<SessionSummary>> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return {};
+  }
+
+  let title: string | undefined;
+  let model: string | undefined;
+  let cwd: string | undefined;
+  let messageCount = 0;
+
+  for (const line of raw.split("\n")) {
+    if (line.trim().length === 0) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (entry.isCanBridgeFence === true) continue;
+    if (typeof entry.cwd === "string") cwd ??= entry.cwd;
+
+    const type = entry.type;
+    if (type !== "user" && type !== "assistant") continue;
+    const msg = entry.message as
+      | { role?: string; model?: string; content?: unknown }
+      | undefined;
+    if (!msg) continue;
+    if (typeof msg.model === "string") model ??= msg.model;
+
+    const role =
+      msg.role === "user" || msg.role === "assistant" ? msg.role : type;
+    const text = claudeContentText(msg.content);
+    if (text.length === 0) continue;
+    messageCount++;
+    if (role === "user" && isTitleCandidate(text)) {
+      title = text;
+    }
+  }
+
+  return {
+    title: title ? compactPreview(title) : undefined,
+    messageCount,
+    model,
+    cwd,
+  };
+}
+
+function claudeContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    const block = item as Record<string, unknown>;
+    if (block.type === "text" && typeof block.text === "string") {
+      parts.push(block.text);
+    }
+  }
+  return parts.join("\n");
+}
+
+function isTitleCandidate(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.length > 0 &&
+    !trimmed.startsWith(UNTRUSTED_FENCE_HEADER) &&
+    !trimmed.startsWith("<environment_context>")
+  );
+}
+
 function normalizeContent(content: unknown): ContentBlock[] {
   if (typeof content === "string") {
     return content.length > 0 ? [{ type: "text", text: content }] : [];
@@ -388,6 +466,12 @@ function normalizeContent(content: unknown): ContentBlock[] {
     }
   }
   return blocks;
+}
+
+function compactPreview(text: string, max = 120): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= max) return compact;
+  return compact.slice(0, max - 3).trimEnd() + "...";
 }
 
 function buildClaudeJsonl(

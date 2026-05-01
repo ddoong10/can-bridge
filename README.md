@@ -75,9 +75,9 @@ can-bridge continue --from claude-code --to codex --latest
 # Then run the printed command:
 #   codex resume <printed-uuid>
 
-# List sessions on either side
-can-bridge list --from claude-code
-can-bridge list --from codex
+# List recent sessions on either side
+can-bridge list --from claude-code --cwd --limit 10
+can-bridge list --from codex --cwd --limit 10
 
 # Check a session file for known schema markers before trusting a conversion
 can-bridge doctor --from codex --session <codex-uuid-or-jsonl>

@@ -92,10 +92,15 @@ export class CodexAdapter {
     }
     async listSessions() {
         const out = [];
-        await walkRollouts(CODEX_SESSIONS_DIR, async (file, stat) => {
+        await walkRollouts(CODEX_SESSIONS_DIR, async (file, stat, fullPath) => {
             const m = file.match(/-([0-9a-f-]{36})\.jsonl$/i);
-            if (m && m[1])
-                out.push({ id: m[1], updatedAt: stat.mtime.toISOString() });
+            if (m && m[1]) {
+                out.push({
+                    id: m[1],
+                    updatedAt: stat.mtime.toISOString(),
+                    ...(await summarizeCodexSession(fullPath)),
+                });
+            }
         });
         return out;
     }
@@ -278,6 +283,80 @@ async function walkRollouts(root, visit) {
             }
         }
     }
+}
+async function summarizeCodexSession(filePath) {
+    let raw;
+    try {
+        raw = await fs.readFile(filePath, "utf8");
+    }
+    catch {
+        return {};
+    }
+    let title;
+    let model;
+    let cwd;
+    let messageCount = 0;
+    for (const line of raw.split("\n")) {
+        if (line.trim().length === 0)
+            continue;
+        let entry;
+        try {
+            entry = JSON.parse(line);
+        }
+        catch {
+            continue;
+        }
+        const payload = entry.payload;
+        if (entry.type === "session_meta" && payload) {
+            if (typeof payload.cwd === "string")
+                cwd ??= payload.cwd;
+            continue;
+        }
+        if (entry.type === "turn_context" && payload) {
+            if (typeof payload.model === "string")
+                model ??= payload.model;
+            continue;
+        }
+        if (entry.type !== "response_item" || !payload)
+            continue;
+        if (payload.type !== "message")
+            continue;
+        const role = payload.role;
+        const text = codexContentText(payload.content);
+        if (text.length === 0)
+            continue;
+        messageCount++;
+        if (role === "user" && isTitleCandidate(text)) {
+            title = text;
+        }
+    }
+    return {
+        title: title ? compactPreview(title) : undefined,
+        messageCount,
+        model,
+        cwd,
+    };
+}
+function codexContentText(content) {
+    if (!Array.isArray(content))
+        return "";
+    const parts = [];
+    for (const item of content) {
+        if (!item || typeof item !== "object")
+            continue;
+        const block = item;
+        if ((block.type === "input_text" || block.type === "output_text") &&
+            typeof block.text === "string") {
+            parts.push(block.text);
+        }
+    }
+    return parts.join("\n");
+}
+function isTitleCandidate(text) {
+    const trimmed = text.trim();
+    return (trimmed.length > 0 &&
+        !trimmed.startsWith(UNTRUSTED_FENCE_HEADER) &&
+        !trimmed.startsWith("<environment_context>"));
 }
 function responseItemToMessage(payload, ts) {
     const itemType = payload.type;
@@ -472,5 +551,11 @@ function textOf(msg) {
         .map((b) => b.text)
         .join("\n\n")
         .trim();
+}
+function compactPreview(text, max = 120) {
+    const compact = text.replace(/\s+/g, " ").trim();
+    if (compact.length <= max)
+        return compact;
+    return compact.slice(0, max - 3).trimEnd() + "...";
 }
 //# sourceMappingURL=codex.js.map

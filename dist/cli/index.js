@@ -196,11 +196,29 @@ async function main() {
             if (!source.listSessions) {
                 throw new Error(`Source "${source.id}" does not support list`);
             }
-            const sessions = await source.listSessions();
-            for (const s of sessions) {
-                process.stdout.write(`${s.id}\t${s.updatedAt ?? ""}\n`);
+            let sessions = await source.listSessions();
+            const cwdFilter = args.cwd === true
+                ? process.cwd()
+                : typeof args.cwd === "string"
+                    ? args.cwd
+                    : undefined;
+            if (cwdFilter) {
+                sessions = filterSessionsByCwd(sessions, cwdFilter);
             }
-            console.error(`(${sessions.length} sessions)`);
+            const limit = args.all ? undefined : parsePositiveInteger(args.limit, 20);
+            const sorted = sortSessionsNewestFirst(sessions);
+            if (args.json) {
+                const visible = typeof limit === "number" ? sorted.slice(0, limit) : sorted;
+                process.stdout.write(JSON.stringify(visible, null, 2) + "\n");
+            }
+            else {
+                process.stdout.write(formatSessionList(sorted, { limit }));
+                const visibleCount = typeof limit === "number" ? Math.min(sorted.length, limit) : sorted.length;
+                const suffix = typeof limit === "number" && sorted.length > visibleCount
+                    ? "; use --all or --limit <n> to show more"
+                    : "";
+                console.error(`(${visibleCount}/${sorted.length} sessions${suffix})`);
+            }
             break;
         }
         case "continue": {
@@ -306,6 +324,77 @@ export async function pickLatestSession(source) {
         }
         return sessionTime > latestTime ? session : latest;
     });
+}
+export function formatSessionList(sessions, options = {}) {
+    if (sessions.length === 0)
+        return "(no sessions)\n";
+    const visible = typeof options.limit === "number" ? sessions.slice(0, options.limit) : sessions;
+    const lines = [];
+    visible.forEach((session, index) => {
+        const meta = [
+            session.messageCount !== undefined
+                ? `${session.messageCount} messages`
+                : undefined,
+            session.model ? `model: ${session.model}` : undefined,
+        ].filter((v) => Boolean(v));
+        lines.push(`${index + 1}. ${formatUpdatedAt(session.updatedAt)}  ${session.id}` +
+            (meta.length > 0 ? `  (${meta.join(", ")})` : ""));
+        if (session.cwd) {
+            lines.push(`   project: ${projectName(session.cwd)}`);
+            lines.push(`   cwd: ${session.cwd}`);
+        }
+        if (session.title) {
+            lines.push(`   latest user: "${session.title}"`);
+        }
+    });
+    return lines.join("\n") + "\n";
+}
+function sortSessionsNewestFirst(sessions) {
+    return [...sessions].sort((a, b) => {
+        const at = Date.parse(a.updatedAt ?? "");
+        const bt = Date.parse(b.updatedAt ?? "");
+        const aNaN = Number.isNaN(at);
+        const bNaN = Number.isNaN(bt);
+        if (aNaN && bNaN)
+            return b.id.localeCompare(a.id);
+        if (aNaN)
+            return 1;
+        if (bNaN)
+            return -1;
+        if (bt === at)
+            return b.id.localeCompare(a.id);
+        return bt - at;
+    });
+}
+function filterSessionsByCwd(sessions, cwd) {
+    const expected = normalizePathForCompare(cwd);
+    return sessions.filter((session) => {
+        if (!session.cwd)
+            return false;
+        return normalizePathForCompare(session.cwd) === expected;
+    });
+}
+function normalizePathForCompare(value) {
+    return path.resolve(value).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+function parsePositiveInteger(value, fallback) {
+    if (typeof value !== "string")
+        return fallback;
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`--limit must be a positive integer (got "${value}")`);
+    }
+    return parsed;
+}
+function formatUpdatedAt(value) {
+    if (!value)
+        return "unknown-time";
+    return value.replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+}
+function projectName(cwd) {
+    const normalized = cwd.replace(/[\\/]+$/, "");
+    const parts = normalized.split(/[\\/]+/);
+    return parts[parts.length - 1] || cwd;
 }
 function printContinueResult(to, result) {
     console.error(`Injected to: ${result.locator}`);
@@ -443,7 +532,7 @@ Commands:
   export --from <source> --session <id> [--out file.json] [--redact]
   import --to <target> --in file.{json,cbctx} [--redact] [--skip-doctor] [--skip-hash-verify]
   pipe   --from <source> --session <id> --to <target> [--as-prompt] [--redact] [--verbose]
-  list   --from <source>
+  list   --from <source> [--cwd [path]] [--limit n | --all] [--json]
   doctor --from <source> --session <id|path> [--json]
   share  --from <source> (--session <id> | --latest) [--redact] [--include-repo-ref]
                          [--include-patch] [--out file.cbctx | --store stdout]

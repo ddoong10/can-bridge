@@ -13,3 +13,6 @@
  */
 import type { SessionSummary, SourceAdapter } from "../adapters/base.js";
 export declare function pickLatestSession(source: SourceAdapter): Promise<SessionSummary>;
+export declare function formatSessionList(sessions: SessionSummary[], options?: {
+    limit?: number;
+}): string;
