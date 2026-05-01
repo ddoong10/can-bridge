@@ -293,8 +293,13 @@ async function summarizeCodexSession(filePath) {
         return {};
     }
     let title;
+    let latestAssistant;
     let model;
     let cwd;
+    let originator;
+    let sourceLabel;
+    let importedFrom;
+    let originalSessionId;
     let messageCount = 0;
     for (const line of raw.split("\n")) {
         if (line.trim().length === 0)
@@ -310,6 +315,15 @@ async function summarizeCodexSession(filePath) {
         if (entry.type === "session_meta" && payload) {
             if (typeof payload.cwd === "string")
                 cwd ??= payload.cwd;
+            if (typeof payload.originator === "string")
+                originator ??= payload.originator;
+            if (typeof payload.source === "string")
+                sourceLabel ??= payload.source;
+            const baseInstructions = payload.base_instructions;
+            if (baseInstructions && typeof baseInstructions.text === "string") {
+                importedFrom ??= parseImportedFrom(baseInstructions.text);
+                originalSessionId ??= parseOriginalSessionId(baseInstructions.text);
+            }
             continue;
         }
         if (entry.type === "turn_context" && payload) {
@@ -329,12 +343,20 @@ async function summarizeCodexSession(filePath) {
         if (role === "user" && isTitleCandidate(text)) {
             title = text;
         }
+        else if (role === "assistant") {
+            latestAssistant = text;
+        }
     }
     return {
         title: title ? compactPreview(title) : undefined,
+        latestAssistant: latestAssistant ? compactPreview(latestAssistant) : undefined,
         messageCount,
         model,
         cwd,
+        originator,
+        sourceLabel,
+        importedFrom,
+        originalSessionId,
     };
 }
 function codexContentText(content) {
@@ -357,6 +379,14 @@ function isTitleCandidate(text) {
     return (trimmed.length > 0 &&
         !trimmed.startsWith(UNTRUSTED_FENCE_HEADER) &&
         !trimmed.startsWith("<environment_context>"));
+}
+function parseImportedFrom(text) {
+    const match = text.match(/This session was imported from\s+([A-Za-z0-9_-]+)/);
+    return match?.[1];
+}
+function parseOriginalSessionId(text) {
+    const match = text.match(/Original session id:\s*([0-9a-f-]+)/i);
+    return match?.[1];
 }
 function responseItemToMessage(payload, ts) {
     const itemType = payload.type;

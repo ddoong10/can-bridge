@@ -75,7 +75,7 @@ can-bridge continue --from claude-code --to codex --latest
 # Then run the printed command:
 #   codex resume <printed-uuid>
 
-# List recent sessions on either side
+# List recent sessions on either side, including import origin and previews
 can-bridge list --from claude-code --cwd --limit 10
 can-bridge list --from codex --cwd --limit 10
 

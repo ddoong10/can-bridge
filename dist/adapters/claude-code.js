@@ -308,8 +308,10 @@ async function summarizeClaudeSession(filePath) {
         return {};
     }
     let title;
+    let latestAssistant;
     let model;
     let cwd;
+    let originator;
     let messageCount = 0;
     for (const line of raw.split("\n")) {
         if (line.trim().length === 0)
@@ -325,6 +327,9 @@ async function summarizeClaudeSession(filePath) {
             continue;
         if (typeof entry.cwd === "string")
             cwd ??= entry.cwd;
+        if (typeof entry.version === "string" && entry.version.startsWith("can-bridge-")) {
+            originator ??= "can-bridge";
+        }
         const type = entry.type;
         if (type !== "user" && type !== "assistant")
             continue;
@@ -341,12 +346,17 @@ async function summarizeClaudeSession(filePath) {
         if (role === "user" && isTitleCandidate(text)) {
             title = text;
         }
+        else if (role === "assistant") {
+            latestAssistant = text;
+        }
     }
     return {
         title: title ? compactPreview(title) : undefined,
+        latestAssistant: latestAssistant ? compactPreview(latestAssistant) : undefined,
         messageCount,
         model,
         cwd,
+        originator,
     };
 }
 function claudeContentText(content) {

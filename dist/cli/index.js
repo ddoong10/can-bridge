@@ -336,6 +336,12 @@ export function formatSessionList(sessions, options = {}) {
                 ? `${session.messageCount} messages`
                 : undefined,
             session.model ? `model: ${session.model}` : undefined,
+            session.importedFrom
+                ? `imported from ${session.importedFrom}` +
+                    (session.originalSessionId
+                        ? `:${session.originalSessionId.slice(0, 8)}`
+                        : "")
+                : undefined,
         ].filter((v) => Boolean(v));
         lines.push(`${index + 1}. ${formatUpdatedAt(session.updatedAt)}  ${session.id}` +
             (meta.length > 0 ? `  (${meta.join(", ")})` : ""));
@@ -346,8 +352,23 @@ export function formatSessionList(sessions, options = {}) {
         if (session.title) {
             lines.push(`   latest user: "${session.title}"`);
         }
+        if (session.latestAssistant) {
+            lines.push(`   latest assistant: "${session.latestAssistant}"`);
+        }
+        const origin = formatOrigin(session);
+        if (origin) {
+            lines.push(`   origin: ${origin}`);
+        }
     });
     return lines.join("\n") + "\n";
+}
+function formatOrigin(session) {
+    const parts = [session.originator, session.sourceLabel].filter((v) => Boolean(v));
+    if (session.importedFrom) {
+        parts.push(`from ${session.importedFrom}` +
+            (session.originalSessionId ? `:${session.originalSessionId}` : ""));
+    }
+    return parts.length > 0 ? parts.join(" / ") : undefined;
 }
 function sortSessionsNewestFirst(sessions) {
     return [...sessions].sort((a, b) => {

@@ -14,10 +14,15 @@ export interface TargetAdapter {
 export interface SessionSummary {
   id: string;
   title?: string;
+  latestAssistant?: string;
   updatedAt?: string;
   messageCount?: number;
   model?: string;
   cwd?: string;
+  originator?: string;
+  sourceLabel?: string;
+  importedFrom?: string;
+  originalSessionId?: string;
 }
 
 export interface InjectionResult {

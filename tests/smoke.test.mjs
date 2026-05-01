@@ -335,9 +335,14 @@ test("session list formatter shows human-readable context", () => {
       id: "abc-123",
       updatedAt: "2026-05-01T03:00:00.000Z",
       title: "Move this conversation to my friend's Claude Code",
+      latestAssistant: "Use can-bridge share and send the cbctx file.",
       messageCount: 12,
       model: "gpt-test",
       cwd: "C:\\Users\\friend\\Desktop\\context_switching",
+      originator: "can-bridge",
+      sourceLabel: "can-bridge-import",
+      importedFrom: "claude-code",
+      originalSessionId: "8131efb2-19ac-407b-a538-8d94a94258e5",
     },
   ]);
 
@@ -346,6 +351,9 @@ test("session list formatter shows human-readable context", () => {
   assert.match(out, /model: gpt-test/);
   assert.match(out, /project: context_switching/);
   assert.match(out, /latest user: "Move this conversation/);
+  assert.match(out, /latest assistant: "Use can-bridge share/);
+  assert.match(out, /imported from claude-code:8131efb2/);
+  assert.match(out, /origin: can-bridge \/ can-bridge-import \/ from claude-code:8131efb2/);
 });
 
 test("session list formatter respects limit", () => {

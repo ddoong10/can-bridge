@@ -350,8 +350,13 @@ async function summarizeCodexSession(
   }
 
   let title: string | undefined;
+  let latestAssistant: string | undefined;
   let model: string | undefined;
   let cwd: string | undefined;
+  let originator: string | undefined;
+  let sourceLabel: string | undefined;
+  let importedFrom: string | undefined;
+  let originalSessionId: string | undefined;
   let messageCount = 0;
 
   for (const line of raw.split("\n")) {
@@ -366,6 +371,15 @@ async function summarizeCodexSession(
     const payload = entry.payload as Record<string, unknown> | undefined;
     if (entry.type === "session_meta" && payload) {
       if (typeof payload.cwd === "string") cwd ??= payload.cwd;
+      if (typeof payload.originator === "string") originator ??= payload.originator;
+      if (typeof payload.source === "string") sourceLabel ??= payload.source;
+      const baseInstructions = payload.base_instructions as
+        | { text?: string }
+        | undefined;
+      if (baseInstructions && typeof baseInstructions.text === "string") {
+        importedFrom ??= parseImportedFrom(baseInstructions.text);
+        originalSessionId ??= parseOriginalSessionId(baseInstructions.text);
+      }
       continue;
     }
     if (entry.type === "turn_context" && payload) {
@@ -381,14 +395,21 @@ async function summarizeCodexSession(
     messageCount++;
     if (role === "user" && isTitleCandidate(text)) {
       title = text;
+    } else if (role === "assistant") {
+      latestAssistant = text;
     }
   }
 
   return {
     title: title ? compactPreview(title) : undefined,
+    latestAssistant: latestAssistant ? compactPreview(latestAssistant) : undefined,
     messageCount,
     model,
     cwd,
+    originator,
+    sourceLabel,
+    importedFrom,
+    originalSessionId,
   };
 }
 
@@ -415,6 +436,16 @@ function isTitleCandidate(text: string): boolean {
     !trimmed.startsWith(UNTRUSTED_FENCE_HEADER) &&
     !trimmed.startsWith("<environment_context>")
   );
+}
+
+function parseImportedFrom(text: string): string | undefined {
+  const match = text.match(/This session was imported from\s+([A-Za-z0-9_-]+)/);
+  return match?.[1];
+}
+
+function parseOriginalSessionId(text: string): string | undefined {
+  const match = text.match(/Original session id:\s*([0-9a-f-]+)/i);
+  return match?.[1];
 }
 
 function responseItemToMessage(

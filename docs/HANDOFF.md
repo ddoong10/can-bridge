@@ -7,6 +7,37 @@ entries go at the top.
 
 ### Status
 
+Tightened `list` again after checking duplicate-looking Codex sessions from
+2026-04-30.
+
+### Findings
+
+- `17a9309c-ca93-446a-ba1f-ba89113f5f3c`,
+  `90bc1970-8bcd-4d09-9f1e-57f299012cd2`, and
+  `298ef083-19f5-4241-94de-b5b5605ff515` all came from the same original
+  Claude Code session: `8131efb2-19ac-407b-a538-8d94a94258e5`.
+- They were created by the early `llm-context-harness` import path
+  (`originator: llm-context-harness`, `source: harness-import`).
+- They are not identical: message counts are 82, 83, and 84. The latest user
+  prompt is the same, but the latest assistant progress differs.
+
+### Changed
+
+- Codex `list` now parses import lineage from `base_instructions`.
+- `list` now shows `imported from <tool>:<original-session-prefix>`.
+- `list` now shows `latest assistant` preview in addition to `latest user`.
+- `list` now shows origin metadata when available.
+
+### Verified
+
+- `npm test`: 39/39 pass.
+- `node dist\cli\index.js list --from codex --all` now distinguishes the three
+  2026-04-30 sessions by latest assistant preview and shared origin.
+
+## 2026-05-02 - Codex
+
+### Status
+
 Improved session selection UX so users are not forced to identify chats by
 random UUID alone.
 
