@@ -54,5 +54,5 @@ follow the protocol in `AGENTS.md` / `CLAUDE.md`:
 
 - Read `TASK_CONTEXT.md` before starting.
 - Update `docs/HANDOFF.md` with what changed and what's verified.
-- Use `harness mailbox` for live agent-to-agent messages.
+- Use `can-bridge mailbox` for live agent-to-agent messages.
 - Record durable choices in `docs/DECISIONS.md`.

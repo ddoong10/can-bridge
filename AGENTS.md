@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-This repository builds `llm-context-harness`, a TypeScript CLI for moving coding
+This repository builds `can-bridge`, a TypeScript CLI for moving coding
 agent context between tools. The current v0 path is Claude Code session JSONL to
 Codex prompt or rollout JSONL.
 

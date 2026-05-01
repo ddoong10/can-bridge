@@ -200,7 +200,7 @@ test("CodexAdapter extracts a real rollout (with function_call) into NormalizedC
 });
 
 test("doctor validates a compatible Codex rollout shape", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-doctor-ok-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-doctor-ok-"));
   const filePath = path.join(
     tempDir,
     "rollout-2026-05-01T00-00-00-000Z-00000000-0000-0000-0000-000000000001.jsonl",
@@ -262,7 +262,7 @@ test("doctor validates a compatible Codex rollout shape", async () => {
 });
 
 test("doctor reports schema drift with score and mismatch codes", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-doctor-bad-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-doctor-bad-"));
   const filePath = path.join(tempDir, "bad-codex.jsonl");
   await fs.writeFile(
     filePath,
@@ -574,7 +574,7 @@ test("ClaudeCodeAdapter extract picks the latest-leaf branch when a session has 
   // Synthetic Claude Code JSONL with two assistant branches off the same
   // user message. The "newer" branch (later timestamp) should win; the
   // older branch should be entirely absent from the extracted transcript.
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-branch-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-branch-"));
   const filePath = path.join(tempDir, "branch-test.jsonl");
 
   const rootUuid = "00000000-0000-0000-0000-000000000001";
@@ -649,7 +649,7 @@ test("ClaudeCodeAdapter extract picks the latest-leaf branch when a session has 
 
 test("ClaudeCodeAdapter extract preserves linear single-chain ordering", async () => {
   // Regression guard: a non-branched file must come out in file order.
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-linear-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-linear-"));
   const filePath = path.join(tempDir, "linear-test.jsonl");
 
   const u = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
@@ -678,7 +678,7 @@ test("ClaudeCodeAdapter extract preserves linear single-chain ordering", async (
 });
 
 test("mailbox stores agent messages and filters inbox/thread views", async () => {
-  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "harness-mailbox-"));
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-mailbox-"));
   const mailbox = path.join(temp, ".agent-chat", "messages.jsonl");
 
   const first = await sendMessage({
@@ -761,7 +761,7 @@ test("writePackage + readPackage round-trip preserves schema", async () => {
     ],
   };
   const { pkg } = await buildPackage(ctx);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-cbctx-"));
   const filePath = path.join(tempDir, defaultPackageName(pkg.source.sessionId));
   const written = await writePackage(pkg, filePath);
   assert.ok(written.endsWith(".cbctx"));
@@ -784,7 +784,7 @@ test("importPackage round-trips through the Codex adapter", async () => {
     ],
   };
   const { pkg } = await buildPackage(ctx);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-imp-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-cbctx-imp-"));
   const filePath = path.join(tempDir, "test.cbctx");
   await writePackage(pkg, filePath);
 
@@ -829,7 +829,7 @@ test("importPackage re-buckets the session under the receiver's cwd", async () =
     messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
   };
   const { pkg } = await buildPackage(ctx);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-rb-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-cbctx-rb-"));
   const filePath = path.join(tempDir, "test.cbctx");
   await writePackage(pkg, filePath);
 
@@ -869,7 +869,7 @@ test("importPackage --keepSourceCwd preserves sender cwd", async () => {
     messages: [{ role: "user", content: [{ type: "text", text: "x" }] }],
   };
   const { pkg } = await buildPackage(ctx);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-keep-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-cbctx-keep-"));
   const filePath = path.join(tempDir, "test.cbctx");
   await writePackage(pkg, filePath);
 

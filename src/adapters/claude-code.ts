@@ -394,7 +394,7 @@ function buildClaudeJsonl(
       timestamp: msg.timestamp ?? fallbackTs,
       sessionId,
       cwd,
-      version: "harness/0.0.1",
+      version: "can-bridge/0.2.0",
       message: messageToClaudeContent(msg),
     };
     out.push(JSON.stringify(wrapper));

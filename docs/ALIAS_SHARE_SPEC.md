@@ -1,6 +1,6 @@
 # Alias Share Design Spec
 
-Status: v1 file-share **IMPLEMENTED** — `harness share` / `harness import`
+Status: v1 file-share **IMPLEMENTED** — `can-bridge share` / `can-bridge import`
 write and read a `can-bridge.context.v1` `.cbctx` package with optional
 redaction, repo metadata (`--include-repo-ref` / `--include-patch`), and
 embedded doctor verdict. v2 (Gist short-key) and v3 (server) remain
@@ -13,9 +13,9 @@ Users may want to keep a converted or summarized context under a short key and
 share it with a friend:
 
 ```bash
-harness keep auth-refactor --from codex --session 019d...
-harness share auth-refactor --with friend@example.com
-harness open auth-refactor
+can-bridge keep auth-refactor --from codex --session 019d...
+can-bridge share auth-refactor --with friend@example.com
+can-bridge open auth-refactor
 ```
 
 The key should be memorable, the content should be recoverable across machines,
@@ -59,7 +59,7 @@ References:
 - Multi-user ACL enforcement without a server.
 - Strong privacy for raw secret Gist URLs. A secret Gist URL is bearer access,
   not private authorization.
-- Replacing `harness pipe`; alias/share wraps exported contexts.
+- Replacing `can-bridge pipe`; alias/share wraps exported contexts.
 
 ## Recommended MVP
 
@@ -142,39 +142,39 @@ Share manifest:
 Create or update alias:
 
 ```bash
-harness keep <alias> --from codex --session <id> [--redact]
-harness keep <alias> --in context.json
-harness keep <alias> --from claude-code --session <id> --tail 20
+can-bridge keep <alias> --from codex --session <id> [--redact]
+can-bridge keep <alias> --in context.json
+can-bridge keep <alias> --from claude-code --session <id> --tail 20
 ```
 
 List and inspect:
 
 ```bash
-harness aliases
-harness show <alias>
-harness open <alias> --as-prompt
+can-bridge aliases
+can-bridge show <alias>
+can-bridge open <alias> --as-prompt
 ```
 
 Share:
 
 ```bash
-harness share <alias> --store gist --expires 7d
-harness share <alias> --store gist --encrypt passphrase
-harness share <alias> --with alice@example.com --encrypt age
+can-bridge share <alias> --store gist --expires 7d
+can-bridge share <alias> --store gist --encrypt passphrase
+can-bridge share <alias> --with alice@example.com --encrypt age
 ```
 
 Import from share:
 
 ```bash
-harness fetch <share-url-or-id> --as <alias>
-harness pipe --from share --session <alias> --to codex
+can-bridge fetch <share-url-or-id> --as <alias>
+can-bridge pipe --from share --session <alias> --to codex
 ```
 
 Delete or revoke:
 
 ```bash
-harness forget <alias>
-harness revoke <alias>
+can-bridge forget <alias>
+can-bridge revoke <alias>
 ```
 
 ## Backing Store Comparison
@@ -236,7 +236,7 @@ MVP:
 Better v1:
 
 - Support `age` recipients:
-  `harness share auth-refactor --encrypt age --recipient age1...`
+  `can-bridge share auth-refactor --encrypt age --recipient age1...`
 - Friend book:
   `~/.can-bridge/friends.json` maps names to public keys.
 

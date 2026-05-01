@@ -60,8 +60,6 @@ npm link
 can-bridge --help
 ```
 
-The legacy `harness` bin is still installed as an alias for older notes.
-
 ## Quick start
 
 ```bash
@@ -260,8 +258,9 @@ counterpart and is encoded into the output text.
 - **Thinking blocks are dropped on cross-tool transfer.** They are signed
   artifacts of the source model and don't make sense in another model's
   context.
-- **`source: "harness-import"`** in our `session_meta.payload.source` falls
-  back to `"unknown"` in Codex's `threads` table. No functional impact.
+- **`source: "can-bridge-import"`** in our `session_meta.payload.source`
+  falls back to `"unknown"` in Codex's `threads` table because Codex
+  doesn't recognize the originator string. No functional impact.
 - **Claude Code resume by id depends on CLI version.** Current versions expose
   `claude --resume <uuid>` and `claude --print --resume <uuid> "<prompt>"`;
   older versions may require choosing the injected file from `claude --resume`.

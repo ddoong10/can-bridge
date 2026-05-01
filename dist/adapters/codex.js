@@ -192,7 +192,7 @@ async function tryRegisterCodexThread(opts) {
         cwd, title, sandbox_policy, approval_mode, tokens_used,
         has_user_event, archived, cli_version, first_user_message,
         memory_mode, model, created_at_ms, updated_at_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(opts.sessionId, opts.filePath, nowSec, nowSec, "harness-import", "openai", cwd, title, '{"type":"read-only"}', "on-request", 0, 0, 0, "0.0.1", firstUser, "enabled", opts.context.source.model ?? null, nowMs, nowMs);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(opts.sessionId, opts.filePath, nowSec, nowSec, "can-bridge-import", "openai", cwd, title, '{"type":"read-only"}', "on-request", 0, 0, 0, "0.0.1", firstUser, "enabled", opts.context.source.model ?? null, nowMs, nowMs);
         return { ok: true };
     }
     catch (err) {
@@ -347,9 +347,9 @@ function buildCodexJsonl(context, sessionId, now) {
             id: sessionId,
             timestamp: ts,
             cwd,
-            originator: "llm-context-harness",
-            cli_version: "0.0.1",
-            source: "harness-import",
+            originator: "can-bridge",
+            cli_version: "0.2.0",
+            source: "can-bridge-import",
             model_provider: "openai",
             base_instructions: { text: buildBaseInstructions(context) },
         },

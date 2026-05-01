@@ -70,7 +70,7 @@ src/
   transform/
     (empty for now — add summarizer, redactor, etc. as needed)
   cli/
-    index.ts         # Entry point: `harness export | harness import`
+    index.ts         # Entry point: `can-bridge export | can-bridge import`
 tests/
   fixtures/          # Real (anonymized) session files for testing
 ```

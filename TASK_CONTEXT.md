@@ -25,7 +25,7 @@ normalizing, and handing off coding-agent conversations across tools.
   `tool_use`/`tool_result` ↔ `function_call`/`function_call_output`.
 - `src/transform/redactor.ts` — opt-in `--redact` pattern-based secret
   scrubber for vendor API keys, JWTs, Bearer tokens, key=value pairs.
-- `src/doctor/session-doctor.ts` — `harness doctor` schema-marker validator
+- `src/doctor/session-doctor.ts` — `can-bridge doctor` schema-marker validator
   for Claude Code and Codex JSONL files; reports score plus mismatch list.
 - `src/cli/index.ts` — `continue`, `pipe`, `export`, `import`, `list`,
   `doctor`, and `mailbox` subcommands; all four source/target combinations
@@ -36,7 +36,7 @@ normalizing, and handing off coding-agent conversations across tools.
 - Smoke tests at `tests/smoke.test.mjs` — 14/14 passing.
 - Shared collaboration files are now present: `AGENTS.md`,
   `TASK_CONTEXT.md`, `docs/HANDOFF.md`, `docs/DECISIONS.md`.
-- A local agent mailbox exists through `harness mailbox`, backed by
+- A local agent mailbox exists through `can-bridge mailbox`, backed by
   `.agent-chat/messages.jsonl` and ignored by git.
 - `docs/RELATED_PROJECTS.md` tracks adjacent GitHub projects and positions
   this repo as a context interchange core, not primarily a live bridge.
@@ -75,7 +75,7 @@ shipped and verified end-to-end on the user's machine (forward via
 `claude --print --resume <uuid>` recall). The current post-release iteration
 also closes the `[error] ` lossy translation and
 handles Claude Code `parentUuid` branches by selecting the latest-leaf chain.
-`harness doctor` is implemented as a heuristic schema-drift detector for known
+`can-bridge doctor` is implemented as a heuristic schema-drift detector for known
 Claude Code and Codex JSONL markers. The local mailbox is implemented so agents
 can exchange explicit messages through repo files instead of hidden context.
 `docs/ALIAS_SHARE_SPEC.md` captures the alias/share design, with local storage
@@ -96,7 +96,7 @@ Code and resumed successfully.
    wrapper.
 7. Keep `AGENTS.md` and `CLAUDE.md` aligned on the shared protocol.
 8. Add or update tests when changing adapters, schema, or transforms.
-9. Consider a watch/daemon mode that polls `harness mailbox inbox` and invokes
+9. Consider a watch/daemon mode that polls `can-bridge mailbox inbox` and invokes
    each agent's CLI automatically.
 10. Re-scan related projects before public release, especially live
     Claude/Codex bridges and MCP wrappers.
