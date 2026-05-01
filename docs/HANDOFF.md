@@ -3,6 +3,32 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-05-02 - Codex
+
+### Status
+
+Confirmed shared handoff docs are updated for Claude Code, and reconciled them
+with the latest `can-bridge`-only CLI naming.
+
+### Notes For Claude Code
+
+- The public/global install work is documented immediately below in the
+  2026-05-01 Codex entry.
+- A later commit `124f591` removed the legacy `harness` bin and user-facing
+  identifiers. The package now exposes only:
+  `can-bridge -> ./dist/cli/index.js`.
+- Historical handoff entries may still mention `harness`; treat those as
+  historical command names from the time of each entry, not current UX.
+- Current install command verified earlier:
+  `npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz`.
+- Current repo visibility is public, so unauthenticated friends can install.
+
+### Verified
+
+- `git status --short`: clean before this note.
+- Latest commit before this note: `124f591 Drop legacy harness bin and
+  identifiers — can-bridge only`.
+
 ## 2026-05-01 - Codex
 
 ### Status
