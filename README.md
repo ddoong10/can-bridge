@@ -45,7 +45,7 @@ are intentionally dropped (internal to the source model).
 From GitHub:
 
 ```bash
-npm install -g github:ddoong10/can-bridge
+npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz
 can-bridge --help
 ```
 
