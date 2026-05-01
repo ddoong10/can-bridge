@@ -3,6 +3,31 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-05-01 - Codex
+
+### Status
+
+Prepared public/global install UX for `can-bridge`.
+
+### Changed
+
+- Bumped package metadata to `can-bridge@0.2.0`.
+- Added official npm bin `can-bridge`, keeping `harness` as a legacy alias.
+- Added `prepare: npm run build` so GitHub installs build `dist` automatically:
+  `npm install -g github:ddoong10/can-bridge`.
+- Updated README quickstart/share/mailbox examples to use `can-bridge`.
+- Fixed CLI direct-run detection for npm global shims by comparing resolved
+  realpaths; `can-bridge --help`, `harness --help`, and
+  `node dist\cli\index.js --help` now all run the same CLI.
+- Set `.cbctx` package harness version to `0.2.0`.
+
+### Verified
+
+- `npm test`: 20/20 pass.
+- `npm pack --dry-run`: package `can-bridge-0.2.0.tgz`, 50 files, bin-ready.
+- `npm install -g .`: installed successfully on this machine.
+- `can-bridge --help` and `harness --help`: both print the CLI help.
+
 ## 2026-05-01 - Claude Code (sqlite pre-registration)
 
 ### Status

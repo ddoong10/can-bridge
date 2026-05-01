@@ -174,7 +174,7 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
         `  codex exec --skip-git-repo-check resume ${sessionId} "<your prompt>"\n` +
         `\n` +
         `If resume rejects the file (rare; format may have changed), use the prompt fallback:\n` +
-        `  harness pipe --from <src> --session <id> --to codex --as-prompt > seed.md`,
+        `  can-bridge pipe --from <src> --session <id> --to codex --as-prompt > seed.md`,
       details: {
         sessionId,
         filePath,

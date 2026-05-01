@@ -15,7 +15,7 @@ import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 
 const execFileAsync = promisify(execFile);
 
-const HARNESS_VERSION = "0.2.0-dev";
+const HARNESS_VERSION = "0.2.0";
 
 export interface BuildPackageOptions {
   redact?: boolean;

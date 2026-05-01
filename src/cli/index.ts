@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 /**
- * harness — LLM Context Harness CLI
+ * can-bridge — portable context handoff for Claude Code and Codex CLI
  *
  * Usage:
- *   harness export --from claude-code --session <id|path> [--out file.json]
- *   harness import --to codex --in file.json
- *   harness pipe   --from claude-code --session <id> --to codex
- *   harness pipe   --from claude-code --session <id> --to codex --as-prompt
- *   harness continue --from claude-code --to codex --latest
- *   harness doctor --from codex --session <id|path> [--json]
- *   harness list   --from claude-code
+ *   can-bridge export --from claude-code --session <id|path> [--out file.json]
+ *   can-bridge import --to codex --in file.json
+ *   can-bridge pipe   --from claude-code --session <id> --to codex
+ *   can-bridge pipe   --from claude-code --session <id> --to codex --as-prompt
+ *   can-bridge continue --from claude-code --to codex --latest
+ *   can-bridge doctor --from codex --session <id|path> [--json]
+ *   can-bridge list   --from claude-code
  */
 
 import { promises as fs } from "node:fs";
+import { realpathSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ClaudeCodeAdapter } from "../adapters/claude-code.js";
 import { CodexAdapter } from "../adapters/codex.js";
@@ -173,7 +175,9 @@ async function main() {
         console.error(``);
         console.error(`Share this file with your friend.`);
         console.error(`On their machine:`);
-        console.error(`  harness import --to <claude-code|codex> --in ${written}`);
+        console.error(
+          `  can-bridge import --to <claude-code|codex> --in ${written}`,
+        );
       }
       break;
     }
@@ -458,7 +462,7 @@ function renderAsPrompt(ctx: NormalizedContext): string {
 }
 
 function printHelp() {
-  process.stderr.write(`harness — LLM Context Harness
+  process.stderr.write(`can-bridge — portable context handoff for Claude Code and Codex CLI
 
 Commands:
   continue --from <source> --to <target> (--latest | --session <id>) [--redact] [--as-prompt]
@@ -482,7 +486,7 @@ Targets: ${Object.keys(TARGETS).join(", ")}
 }
 
 function printMailboxHelp() {
-  process.stderr.write(`harness mailbox — local agent-to-agent message queue
+  process.stderr.write(`can-bridge mailbox — local agent-to-agent message queue
 
 Commands:
   mailbox send --from <agent> --to <agent> --body <text> [--thread <id>] [--subject <text>] [--reply-to <id>]
@@ -496,8 +500,19 @@ Flags:
 `);
 }
 
+function sameEntrypoint(a: string, b: string): boolean {
+  const pa = path.resolve(a);
+  const pb = path.resolve(b);
+  if (pa === pb) return true;
+  try {
+    return realpathSync.native(pa) === realpathSync.native(pb);
+  } catch {
+    return false;
+  }
+}
+
 const isDirectRun = process.argv[1]
-  ? fileURLToPath(import.meta.url) === process.argv[1]
+  ? sameEntrypoint(fileURLToPath(import.meta.url), process.argv[1])
   : false;
 
 if (isDirectRun) {

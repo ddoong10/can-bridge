@@ -1,8 +1,8 @@
 /**
  * Canonical context package — `.cbctx` v1.
  *
- * The portable artifact that travels between machines. A `harness share`
- * produces one of these; a `harness import` consumes one. Inside the
+ * The portable artifact that travels between machines. A `can-bridge share`
+ * produces one of these; a `can-bridge import` consumes one. Inside the
  * package: the normalized conversation, optional repo reference, what
  * was redacted, and a doctor verdict captured at share time.
  *

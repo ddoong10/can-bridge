@@ -4,8 +4,8 @@
 > context.** A small TypeScript CLI that extracts a session from one tool,
 > normalizes it, and injects it into the other — both directions.
 
-[![tests](https://img.shields.io/badge/tests-14%2F14%20passing-brightgreen)](#verified-behavior)
-[![status](https://img.shields.io/badge/status-v0.1%20bidirectional-blue)](#what-works)
+[![tests](https://img.shields.io/badge/tests-20%2F20%20passing-brightgreen)](#verified-behavior)
+[![status](https://img.shields.io/badge/status-v0.2%20portable%20handoff-blue)](#what-works)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ## Why
@@ -24,7 +24,7 @@ Anthropic's `tool_use` / `tool_result` blocks to OpenAI Responses
 `function_call` / `function_call_output` items in both directions, so
 agents pick up where the other left off.
 
-> **Status: v0.1.** Source and target formats are not officially documented.
+> **Status: v0.2.** Source and target formats are not officially documented.
 > Adapters were verified against real local files on 2026-04-30
 > (Claude Code v2.1.119, Codex CLI v0.125.0 / rollout v0.126.0-alpha.8).
 > Re-verify if either tool ships a format change.
@@ -40,27 +40,46 @@ Bidirectional. Tool calls (`tool_use` / `tool_result` ↔ `function_call` /
 `function_call_output`) translate at the adapter boundary. Thinking blocks
 are intentionally dropped (internal to the source model).
 
+## Install
+
+From GitHub:
+
+```bash
+npm install -g github:ddoong10/can-bridge
+can-bridge --help
+```
+
+From a local checkout:
+
+```bash
+git clone https://github.com/ddoong10/can-bridge.git
+cd can-bridge
+npm install
+npm run build
+npm link
+can-bridge --help
+```
+
+The legacy `harness` bin is still installed as an alias for older notes.
+
 ## Quick start
 
 ```bash
-npm install
-npm run build
-
 # Easiest path: continue the latest Claude Code session in Codex
-node dist/cli/index.js continue --from claude-code --to codex --latest
+can-bridge continue --from claude-code --to codex --latest
 # Then run the printed command:
 #   codex resume <printed-uuid>
 
 # List sessions on either side
-node dist/cli/index.js list --from claude-code
-node dist/cli/index.js list --from codex
+can-bridge list --from claude-code
+can-bridge list --from codex
 
 # Check a session file for known schema markers before trusting a conversion
-node dist/cli/index.js doctor --from codex --session <codex-uuid-or-jsonl>
-node dist/cli/index.js doctor --from claude-code --session <claude-session-id-or-jsonl>
+can-bridge doctor --from codex --session <codex-uuid-or-jsonl>
+can-bridge doctor --from claude-code --session <claude-session-id-or-jsonl>
 
 # Forward: Claude Code → Codex
-node dist/cli/index.js pipe \
+can-bridge pipe \
   --from claude-code --session <claude-session-id> \
   --to codex
 # Then in a real terminal:
@@ -69,7 +88,7 @@ node dist/cli/index.js pipe \
 #   codex exec --skip-git-repo-check resume <printed-uuid> "<prompt>"
 
 # Reverse: Codex → Claude Code
-node dist/cli/index.js pipe \
+can-bridge pipe \
   --from codex --session <codex-uuid> \
   --to claude-code
 # Then in the same cwd:
@@ -83,7 +102,7 @@ If a target rejects an authored file (rare; means the format has changed),
 fall back to a portable text seed any LLM can take:
 
 ```bash
-node dist/cli/index.js pipe \
+can-bridge pipe \
   --from <src> --session <id> --to <target> --as-prompt > seed.md
 ```
 
@@ -97,7 +116,7 @@ or Codex).
 **Sender:**
 
 ```bash
-node dist/cli/index.js share \
+can-bridge share \
   --from claude-code --latest --redact --include-repo-ref \
   --out my-session.cbctx
 # → Wrote my-session.cbctx (484 messages, repo: 731842b...)
@@ -111,7 +130,7 @@ node dist/cli/index.js share \
 cd ~/Desktop/same-project
 
 # 2. import — the new session is keyed under YOUR cwd, not the sender's
-node dist/cli/index.js import --to codex --in ~/Downloads/my-session.cbctx
+can-bridge import --to codex --in ~/Downloads/my-session.cbctx
 #   Originally from claude-code (claude-opus-4-7), 484 messages.
 #   Original session: 8131efb2-...
 #   Original cwd: C:\Users\ddoon\Desktop\context_switching
@@ -150,23 +169,23 @@ talk through a local mailbox file. The default mailbox is
 
 ```bash
 # Codex asks Claude Code to review something
-node dist/cli/index.js mailbox send \
+can-bridge mailbox send \
   --from codex --to claude \
   --subject "adapter review" \
   --body "Please review the Codex adapter tests and reply in this thread."
 
 # Claude Code reads its inbox
-node dist/cli/index.js mailbox inbox --agent claude
+can-bridge mailbox inbox --agent claude
 
 # Claude Code replies in the same thread
-node dist/cli/index.js mailbox send \
+can-bridge mailbox send \
   --from claude --to codex \
   --thread <thread-id> \
   --reply-to <message-id> \
   --body "Reviewed. Add one regression test for mailbox threading."
 
 # Codex reads the full thread
-node dist/cli/index.js mailbox thread --thread <thread-id>
+can-bridge mailbox thread --thread <thread-id>
 ```
 
 Use `docs/HANDOFF.md` for durable handoffs. Use the mailbox for live,
@@ -207,7 +226,7 @@ sessions (skips if absent). It verifies:
   file by UUID, recall the original first message verbatim, auto-register
   a row in `~/.codex/state_5.sqlite` on first resume, and append the new
   turn back to the rollout file on disk.
-- **Friendly latest continue**: `node dist/cli/index.js continue --from
+- **Friendly latest continue**: `can-bridge continue --from
   claude-code --to codex --latest` selected the latest Claude Code session,
   passed doctor preflight, extracted 409 messages, and wrote a resumable
   Codex rollout.
@@ -232,7 +251,7 @@ The `arguments` field on the OpenAI side is a JSON-encoded **string**, not
 an object. The `is_error` flag on the Anthropic side has no OpenAI
 counterpart and is encoded into the output text.
 
-## Known v0.1 limits
+## Known v0.2 limits
 
 - **Claude Code branches** — when a session has multiple `parentUuid`
   branches, we follow the **latest-leaf chain** (newest leaf by
@@ -246,7 +265,7 @@ counterpart and is encoded into the output text.
 - **Claude Code resume by id depends on CLI version.** Current versions expose
   `claude --resume <uuid>` and `claude --print --resume <uuid> "<prompt>"`;
   older versions may require choosing the injected file from `claude --resume`.
-- **`harness doctor` is heuristic.** It catches known structural drift before
+- **`can-bridge doctor` is heuristic.** It catches known structural drift before
   conversion, but it is not a formal vendor schema validator and should be
   updated whenever local Claude Code or Codex formats change.
 
@@ -272,7 +291,7 @@ src/
     base.ts                    Adapter interfaces
     claude-code.ts             Claude Code source + target
     codex.ts                   Codex CLI source + target
-  cli/index.ts                 harness CLI
+  cli/index.ts                 can-bridge CLI
   collab/mailbox.ts            Local agent mailbox
   doctor/session-doctor.ts     Session schema marker checks
 tests/
