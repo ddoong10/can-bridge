@@ -13,7 +13,8 @@ Prepared public/global install UX for `can-bridge`.
 
 - Bumped package metadata to `can-bridge@0.2.0`.
 - Added official npm bin `can-bridge`, keeping `harness` as a legacy alias.
-- Added `prepare: npm run build` so GitHub installs build `dist` automatically:
+- Committed built `dist` artifacts and removed `prepare` so GitHub installs do
+  not require TypeScript at install time:
   `npm install -g github:ddoong10/can-bridge`.
 - Updated README quickstart/share/mailbox examples to use `can-bridge`.
 - Fixed CLI direct-run detection for npm global shims by comparing resolved
@@ -27,6 +28,8 @@ Prepared public/global install UX for `can-bridge`.
 - `npm pack --dry-run`: package `can-bridge-0.2.0.tgz`, 50 files, bin-ready.
 - `npm install -g .`: installed successfully on this machine.
 - `can-bridge --help` and `harness --help`: both print the CLI help.
+- First GitHub install attempt failed while `prepare` tried to run `tsc`; fixed
+  by committing `dist` and removing `prepare`.
 
 ## 2026-05-01 - Claude Code (sqlite pre-registration)
 

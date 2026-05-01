@@ -10,7 +10,6 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepare": "npm run build",
     "harness": "node dist/cli/index.js",
     "test": "npm run build && node --test tests/*.test.mjs"
   },
