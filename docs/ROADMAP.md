@@ -21,12 +21,13 @@ resumable session for another person or another tool.
   - `claude --resume`
 - `.cbctx` portable context package.
 - Receiver-side cwd re-bucketing on `.cbctx` import.
-- Public GitHub install path:
+- Public npm install path:
 
 ```powershell
-npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz
+npm install -g can-bridge
 ```
 
+- GitHub main install path remains available for testing unreleased commits.
 - `can-bridge` as the single public CLI name.
 - Legacy `harness` user-facing commands removed.
 - `.cbctx` `contentHash` integrity check.
@@ -189,8 +190,14 @@ After those, implement:
 ## Current Install Command
 
 ```powershell
-npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz
+npm install -g can-bridge
 can-bridge --help
+```
+
+For unreleased commits on `main`:
+
+```powershell
+npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz
 ```
 
 ## Current Share Flow
@@ -205,7 +212,7 @@ can-bridge share --from claude-code --latest --redact --include-repo-ref --inclu
 Receiver:
 
 ```powershell
-npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz
+npm install -g can-bridge
 cd <project>
 can-bridge import --to claude-code --in <path-to>\handoff.cbctx
 claude --resume <printed-session-id>
@@ -218,4 +225,3 @@ cd <project>
 can-bridge import --to codex --in <path-to>\handoff.cbctx
 codex resume <printed-session-id>
 ```
-

@@ -42,7 +42,14 @@ are intentionally dropped (internal to the source model).
 
 ## Install
 
-From GitHub:
+From npm:
+
+```bash
+npm install -g can-bridge
+can-bridge --help
+```
+
+From GitHub main:
 
 ```bash
 npm install -g https://github.com/ddoong10/can-bridge/archive/refs/heads/main.tar.gz

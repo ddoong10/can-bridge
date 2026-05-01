@@ -7,6 +7,24 @@ entries go at the top.
 
 ### Status
 
+Published `can-bridge@0.2.0` to npm and updated install docs.
+
+### Changed
+
+- `npm view can-bridge version` now resolves to `0.2.0`.
+- README install instructions now lead with `npm install -g can-bridge`.
+- Roadmap install/share examples now use the npm package as the default path.
+- GitHub tarball install remains documented for unreleased `main` commits.
+
+### Verified
+
+- npm registry lookup: `can-bridge@0.2.0`.
+- `git status --short`: clean before doc updates.
+
+## 2026-05-02 - Codex
+
+### Status
+
 Added a roadmap document for the current project state and next plan.
 
 ### Changed
