@@ -820,3 +820,72 @@ test("packageToContext exposes the embedded redaction/repo/doctor as metadata", 
   assert.equal(back.metadata.cbctxRedaction.enabled, true);
   assert.equal(back.metadata.cbctxHarnessVersion, pkg.harnessVersion);
 });
+
+test("importPackage re-buckets the session under the receiver's cwd", async () => {
+  const senderCwd = "C:/sender/some-old-path/that-doesnt-exist-on-receiver";
+  const ctx = {
+    schemaVersion: "0.1",
+    source: { tool: "claude-code", sessionId: "rb-1", cwd: senderCwd },
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+  };
+  const { pkg } = await buildPackage(ctx);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-rb-"));
+  const filePath = path.join(tempDir, "test.cbctx");
+  await writePackage(pkg, filePath);
+
+  const target = new ClaudeCodeAdapter();
+  const receiverCwd = path.join(tempDir, "receiver-project");
+  const { result } = await importPackage(filePath, target, { receiverCwd });
+
+  // The injected file must live under receiverCwd's encoded folder, not the
+  // sender's. We don't write to the receiver's real ~/.claude — that would
+  // pollute the test environment — so we just check that the locator path
+  // contains a folder derived from receiverCwd.
+  const expectedFolderPart = receiverCwd
+    .replace(/[:\\/_]/g, "-");
+  assert.ok(
+    result.locator.includes(expectedFolderPart) ||
+      result.locator.includes(expectedFolderPart.replace(/^.{1}--/, "")),
+    `expected receiver cwd folder in ${result.locator}, looked for ${expectedFolderPart}`,
+  );
+
+  // And the original sender cwd must NOT appear (it would cause the receiver
+  // to write under a folder that exists only on the sender's machine).
+  assert.ok(
+    !result.locator.includes("sender-some-old-path"),
+    `sender cwd leaked into locator: ${result.locator}`,
+  );
+
+  // Cleanup.
+  await fs.unlink(result.locator).catch(() => {});
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("importPackage --keepSourceCwd preserves sender cwd", async () => {
+  const senderCwd = process.cwd();
+  const ctx = {
+    schemaVersion: "0.1",
+    source: { tool: "claude-code", sessionId: "rb-2", cwd: senderCwd },
+    messages: [{ role: "user", content: [{ type: "text", text: "x" }] }],
+  };
+  const { pkg } = await buildPackage(ctx);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-keep-"));
+  const filePath = path.join(tempDir, "test.cbctx");
+  await writePackage(pkg, filePath);
+
+  const target = new ClaudeCodeAdapter();
+  const receiverCwd = path.join(tempDir, "different-place");
+  const { result } = await importPackage(filePath, target, {
+    receiverCwd,
+    keepSourceCwd: true,
+  });
+  // With keepSourceCwd, the locator should reflect the SENDER cwd folder.
+  const senderFolder = senderCwd.replace(/[:\\/_]/g, "-");
+  assert.ok(
+    result.locator.includes(senderFolder),
+    `expected sender cwd folder in ${result.locator}`,
+  );
+
+  await fs.unlink(result.locator).catch(() => {});
+  await fs.rm(tempDir, { recursive: true, force: true });
+});

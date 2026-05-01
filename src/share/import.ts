@@ -10,6 +10,17 @@ import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 export interface ImportPackageOptions {
   skipDoctor?: boolean;
   redactAdditional?: boolean;
+  /**
+   * The cwd the receiver wants the new session attached to. Defaults to
+   * `process.cwd()` because target adapters (Claude Code) bucket sessions
+   * by cwd, and the sender's path won't exist on the receiver's machine.
+   */
+  receiverCwd?: string;
+  /**
+   * Keep the sender's original cwd in source.cwd. Off by default —
+   * useful for archival/debugging when no inject is happening.
+   */
+  keepSourceCwd?: boolean;
 }
 
 export interface ImportSummary {
@@ -69,6 +80,25 @@ export async function importPackage(
 ): Promise<{ result: InjectionResult; summary: ImportSummary }> {
   const pkg = await readPackage(filePath);
   let ctx = packageToContext(pkg);
+
+  // Re-bucket the conversation under the receiver's cwd so target
+  // adapters (Claude Code in particular, which keys session files by
+  // <encoded-cwd>) drop it into the right project folder. Stash the
+  // sender's cwd in metadata so receivers can still see where it came
+  // from.
+  if (!opts.keepSourceCwd) {
+    const receiverCwd = opts.receiverCwd ?? process.cwd();
+    if (receiverCwd && ctx.source.cwd !== receiverCwd) {
+      ctx = {
+        ...ctx,
+        source: { ...ctx.source, cwd: receiverCwd },
+        metadata: {
+          ...(ctx.metadata ?? {}),
+          originalCwd: ctx.source.cwd,
+        },
+      };
+    }
+  }
 
   if (opts.redactAdditional) {
     ctx = redactContext(ctx);

@@ -114,6 +114,8 @@ async function main() {
         const { result, summary } = await importPackage(inPath, target, {
           skipDoctor: args["skip-doctor"] === true,
           redactAdditional: args.redact === true,
+          keepSourceCwd: args["keep-source-cwd"] === true,
+          receiverCwd: typeof args.cwd === "string" ? args.cwd : undefined,
         });
         process.stderr.write(formatImportSummary(summary));
         console.error(`Injected to: ${result.locator}`);

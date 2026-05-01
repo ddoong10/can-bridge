@@ -107,15 +107,25 @@ node dist/cli/index.js share \
 **Receiver (any machine, either tool):**
 
 ```bash
-node dist/cli/index.js import --to codex --in my-session.cbctx
+# 1. cd to the project folder you want this conversation attached to
+cd ~/Desktop/same-project
+
+# 2. import — the new session is keyed under YOUR cwd, not the sender's
+node dist/cli/index.js import --to codex --in ~/Downloads/my-session.cbctx
 #   Originally from claude-code (claude-opus-4-7), 484 messages.
 #   Original session: 8131efb2-...
+#   Original cwd: C:\Users\ddoon\Desktop\context_switching
 #   Repo: github.com/ddoong10/can-bridge (branch main) @ 731842b...
 #   Doctor (at share time): ok 100/100
 #   Doctor (preflight on import): ok 100/100
 # → Injected to: ~/.codex/sessions/.../rollout-...jsonl
 codex resume <printed-uuid>
 ```
+
+The `.cbctx` file location doesn't matter — what matters is **the cwd
+you `cd` into before running `import`**. That cwd is where the new
+session ends up. (Pass `--cwd <path>` or `--keep-source-cwd` to
+override.)
 
 What goes in the `.cbctx` (`can-bridge.context.v1` schema):
 
