@@ -39,6 +39,12 @@ export interface CbctxPackage {
     createdAt: string;
     /** can-bridge version that produced this package. */
     harnessVersion: string;
+    /**
+     * sha256 over canonical(source + summary + messages). Optional because
+     * v0.2 packages produced before the field was added do not have it.
+     * When present, importers verify it before injection.
+     */
+    contentHash?: string;
 }
 export interface CbctxRepoRef {
     remote?: string;
@@ -67,6 +73,13 @@ export interface CbctxDoctorSnapshot {
         message: string;
     }>;
 }
+/**
+ * Compute the canonical sha256 content hash over a package's
+ * source + summary + messages. Used by the importer to detect tampering
+ * or accidental corruption in transit. Implemented without external
+ * deps so importers running offline still work.
+ */
+export declare function computeCbctxContentHash(pkg: Pick<CbctxPackage, "source" | "summary" | "messages">): string;
 /**
  * Structural guard for an unknown JSON blob. Returns true only if the
  * minimum-required v1 fields are present and have the expected shape.

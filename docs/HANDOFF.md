@@ -7,6 +7,37 @@ entries go at the top.
 
 ### Status
 
+Reviewed and tightened the Architect-approved security hardening patch before
+push.
+
+### Changed
+
+- Read `docs/REVIEW_2026-05-02.md` and verified the implemented P0/P1/HIGH
+  items against the code.
+- Fixed a regression in `buildPackage`: `--redact` was applying redaction to
+  the original context after thinking blocks had been stripped, which could
+  revive thinking blocks inside `.cbctx`. Redaction now runs on the
+  already-stripped context.
+- Tightened `.cbctx` integrity verification: packages missing `contentHash`
+  now fail by default. `--skip-hash-verify` is required for trusted legacy
+  packages or intentional overrides.
+- Added regression coverage for both cases above.
+- Updated README to document that missing hashes are rejected by default and
+  to reflect the current test count.
+
+### Verified
+
+- `npm test`: 37/37 pass.
+- `npm pack --dry-run`: package builds with 58 files and includes new
+  `dist/transform/fence.*` and `dist/version.*` artifacts.
+- `git diff --check`: no whitespace errors (only CRLF conversion warnings).
+- `node dist\cli\index.js --help`: current local CLI shows
+  `--skip-hash-verify`.
+
+## 2026-05-02 - Codex
+
+### Status
+
 Confirmed shared handoff docs are updated for Claude Code, and reconciled them
 with the latest `can-bridge`-only CLI naming.
 

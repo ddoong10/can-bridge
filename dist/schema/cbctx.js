@@ -8,8 +8,52 @@
  *
  * Pure types + a single `isCbctxPackage()` guard. No I/O.
  */
+import { createHash } from "node:crypto";
 /** Stable schema id. Bump when we make a breaking change. */
 export const CBCTX_SCHEMA_V1 = "can-bridge.context.v1";
+/**
+ * Compute the canonical sha256 content hash over a package's
+ * source + summary + messages. Used by the importer to detect tampering
+ * or accidental corruption in transit. Implemented without external
+ * deps so importers running offline still work.
+ */
+export function computeCbctxContentHash(pkg) {
+    const canonical = canonicalJSON({
+        source: pkg.source,
+        summary: pkg.summary,
+        messages: pkg.messages,
+    });
+    return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+/**
+ * Recursive key-sort canonicalization. Mirrors JSON.stringify's "drop
+ * undefined values" rule so a producer that hashes `{x: undefined}` gets
+ * the same digest as a consumer that round-tripped the package through
+ * disk (where undefined keys disappear).
+ */
+function canonicalJSON(value) {
+    if (value === undefined)
+        return "null";
+    if (value === null || typeof value !== "object") {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return ("[" +
+            value
+                .map((v) => (v === undefined ? "null" : canonicalJSON(v)))
+                .join(",") +
+            "]");
+    }
+    const obj = value;
+    const keys = Object.keys(obj)
+        .filter((k) => obj[k] !== undefined)
+        .sort();
+    return ("{" +
+        keys
+            .map((k) => JSON.stringify(k) + ":" + canonicalJSON(obj[k]))
+            .join(",") +
+        "}");
+}
 /**
  * Structural guard for an unknown JSON blob. Returns true only if the
  * minimum-required v1 fields are present and have the expected shape.

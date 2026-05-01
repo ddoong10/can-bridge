@@ -9,6 +9,7 @@
  * Pure types + a single `isCbctxPackage()` guard. No I/O.
  */
 
+import { createHash } from "node:crypto";
 import type { NormalizedMessage } from "./context.js";
 
 /** Stable schema id. Bump when we make a breaking change. */
@@ -42,6 +43,12 @@ export interface CbctxPackage {
   createdAt: string;
   /** can-bridge version that produced this package. */
   harnessVersion: string;
+  /**
+   * sha256 over canonical(source + summary + messages). Optional because
+   * v0.2 packages produced before the field was added do not have it.
+   * When present, importers verify it before injection.
+   */
+  contentHash?: string;
 }
 
 export interface CbctxRepoRef {
@@ -69,6 +76,56 @@ export interface CbctxDoctorSnapshot {
     code: string;
     message: string;
   }>;
+}
+
+/**
+ * Compute the canonical sha256 content hash over a package's
+ * source + summary + messages. Used by the importer to detect tampering
+ * or accidental corruption in transit. Implemented without external
+ * deps so importers running offline still work.
+ */
+export function computeCbctxContentHash(
+  pkg: Pick<CbctxPackage, "source" | "summary" | "messages">,
+): string {
+  const canonical = canonicalJSON({
+    source: pkg.source,
+    summary: pkg.summary,
+    messages: pkg.messages,
+  });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * Recursive key-sort canonicalization. Mirrors JSON.stringify's "drop
+ * undefined values" rule so a producer that hashes `{x: undefined}` gets
+ * the same digest as a consumer that round-tripped the package through
+ * disk (where undefined keys disappear).
+ */
+function canonicalJSON(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return (
+      "[" +
+      value
+        .map((v) => (v === undefined ? "null" : canonicalJSON(v)))
+        .join(",") +
+      "]"
+    );
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort();
+  return (
+    "{" +
+    keys
+      .map((k) => JSON.stringify(k) + ":" + canonicalJSON(obj[k]))
+      .join(",") +
+    "}"
+  );
 }
 
 /**

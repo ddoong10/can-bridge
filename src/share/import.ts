@@ -3,7 +3,7 @@ import path from "node:path";
 import type { TargetAdapter, InjectionResult } from "../adapters/base.js";
 import type { NormalizedContext } from "../schema/context.js";
 import type { CbctxPackage } from "../schema/cbctx.js";
-import { isCbctxPackage } from "../schema/cbctx.js";
+import { isCbctxPackage, computeCbctxContentHash } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 
@@ -21,6 +21,11 @@ export interface ImportPackageOptions {
    * useful for archival/debugging when no inject is happening.
    */
   keepSourceCwd?: boolean;
+  /**
+   * Skip the contentHash check. Off by default — kept for fallback when
+   * importing a legacy package that pre-dates the field.
+   */
+  skipHashVerify?: boolean;
 }
 
 export interface ImportSummary {
@@ -31,6 +36,9 @@ export interface ImportSummary {
   messageCount: number;
   preflightStatus?: "ok" | "warn" | "fail";
   preflightScore?: number;
+  /** "ok" — hash present and matched; "skipped" — caller opted out;
+   *  "missing" — package has no hash (legacy v0.2 package). */
+  hashStatus?: "ok" | "skipped" | "missing";
 }
 
 export async function readPackage(filePath: string): Promise<CbctxPackage> {
@@ -79,6 +87,37 @@ export async function importPackage(
   opts: ImportPackageOptions = {},
 ): Promise<{ result: InjectionResult; summary: ImportSummary }> {
   const pkg = await readPackage(filePath);
+
+  let hashStatus: ImportSummary["hashStatus"] = "missing";
+  if (typeof pkg.contentHash === "string" && pkg.contentHash.length > 0) {
+    if (opts.skipHashVerify) {
+      hashStatus = "skipped";
+    } else {
+      const expected = pkg.contentHash;
+      const actual = computeCbctxContentHash({
+        source: pkg.source,
+        summary: pkg.summary,
+        messages: pkg.messages,
+      });
+      if (expected !== actual) {
+        throw new Error(
+          `Package contentHash mismatch — file may be tampered or corrupted.\n` +
+            `  expected: ${expected}\n` +
+            `  actual:   ${actual}\n` +
+            `Override with --skip-hash-verify ONLY if you trust the source.`,
+        );
+      }
+      hashStatus = "ok";
+    }
+  } else if (opts.skipHashVerify) {
+    hashStatus = "missing";
+  } else {
+    throw new Error(
+      `Package contentHash missing — integrity cannot be verified.\n` +
+        `Override with --skip-hash-verify ONLY if this is a trusted legacy package.`,
+    );
+  }
+
   let ctx = packageToContext(pkg);
 
   // Re-bucket the conversation under the receiver's cwd so target
@@ -110,6 +149,7 @@ export async function importPackage(
     redaction: pkg.redaction,
     doctor: pkg.doctor,
     messageCount: pkg.messages.length,
+    hashStatus,
   };
 
   if (!opts.skipDoctor) {
@@ -172,6 +212,15 @@ export function formatImportSummary(s: ImportSummary): string {
     lines.push(
       `  Doctor (preflight on import): ${s.preflightStatus} ${s.preflightScore}/100`,
     );
+  }
+  if (s.hashStatus) {
+    const note =
+      s.hashStatus === "ok"
+        ? "verified"
+        : s.hashStatus === "skipped"
+          ? "skipped (--skip-hash-verify)"
+          : "missing (legacy package — cannot verify integrity)";
+    lines.push(`  Content hash: ${note}`);
   }
   return lines.join("\n") + "\n";
 }

@@ -23,6 +23,7 @@ import { isCbctxPackage } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
 import { buildPackage, defaultPackageName, writePackage, } from "../share/share.js";
 import { formatImportSummary, importPackage, } from "../share/import.js";
+import { UNTRUSTED_FENCE_HEADER } from "../transform/fence.js";
 const SOURCES = {
     "claude-code": () => new ClaudeCodeAdapter(),
     codex: () => new CodexAdapter(),
@@ -39,7 +40,18 @@ function parseArgs(argv) {
         const a = argv[i];
         if (!a || !a.startsWith("--"))
             continue;
-        const key = a.slice(2);
+        const body = a.slice(2);
+        // Support --key=value form (GNU long option style).
+        const eq = body.indexOf("=");
+        if (eq >= 0) {
+            const key = body.slice(0, eq);
+            const value = body.slice(eq + 1);
+            if (key.length === 0)
+                continue;
+            out[key] = value;
+            continue;
+        }
+        const key = body;
         const next = argv[i + 1];
         if (next && !next.startsWith("--")) {
             out[key] = next;
@@ -56,14 +68,17 @@ async function main() {
     const args = parseArgs(rest);
     switch (sub) {
         case "export": {
-            const source = pickSource(String(args.from ?? ""));
-            let ctx = await source.extract(String(args.session ?? ""));
+            const source = pickSource(requireArg(args, "from"));
+            let ctx = await source.extract(requireArg(args, "session"));
             if (args.redact)
                 ctx = redactContext(ctx);
             const json = JSON.stringify(ctx, null, 2);
-            if (args.out) {
-                await fs.writeFile(String(args.out), json, "utf8");
-                console.error(`Wrote ${String(args.out)} (${ctx.messages.length} messages` +
+            if (args.out === true) {
+                throw new Error("--out requires a file path (got bare flag)");
+            }
+            if (typeof args.out === "string") {
+                await fs.writeFile(args.out, json, "utf8");
+                console.error(`Wrote ${args.out} (${ctx.messages.length} messages` +
                     (args.redact ? ", redacted" : "") +
                     `)`);
             }
@@ -73,8 +88,8 @@ async function main() {
             break;
         }
         case "import": {
-            const target = pickTarget(String(args.to ?? ""));
-            const inPath = String(args.in ?? "/dev/stdin");
+            const target = pickTarget(requireArg(args, "to"));
+            const inPath = typeof args.in === "string" ? args.in : "/dev/stdin";
             const raw = await fs.readFile(inPath, "utf8");
             let parsed;
             try {
@@ -90,12 +105,18 @@ async function main() {
                     redactAdditional: args.redact === true,
                     keepSourceCwd: args["keep-source-cwd"] === true,
                     receiverCwd: typeof args.cwd === "string" ? args.cwd : undefined,
+                    skipHashVerify: args["skip-hash-verify"] === true,
                 });
                 process.stderr.write(formatImportSummary(summary));
                 console.error(`Injected to: ${result.locator}`);
                 console.error(result.hint);
             }
             else {
+                // Raw NormalizedContext JSON path — note that this format does NOT
+                // carry a contentHash. The receiver has no way to detect tampering;
+                // make that visible at the terminal.
+                console.error("WARNING: input is raw NormalizedContext JSON without a contentHash. " +
+                    "Integrity cannot be verified. Use --in <file>.cbctx for hash-checked imports.");
                 let ctx = parsed;
                 if (args.redact)
                     ctx = redactContext(ctx);
@@ -106,7 +127,7 @@ async function main() {
             break;
         }
         case "share": {
-            const source = pickSource(String(args.from ?? ""));
+            const source = pickSource(requireArg(args, "from"));
             let sessionId = typeof args.session === "string" ? args.session : "";
             if (!sessionId && args.latest) {
                 const latest = await pickLatestSession(source);
@@ -149,8 +170,8 @@ async function main() {
             break;
         }
         case "pipe": {
-            const source = pickSource(String(args.from ?? ""));
-            let ctx = await source.extract(String(args.session ?? ""));
+            const source = pickSource(requireArg(args, "from"));
+            let ctx = await source.extract(requireArg(args, "session"));
             if (args.redact)
                 ctx = redactContext(ctx);
             if (args.verbose) {
@@ -163,7 +184,7 @@ async function main() {
                 process.stdout.write(renderAsPrompt(ctx));
             }
             else {
-                const target = pickTarget(String(args.to ?? ""));
+                const target = pickTarget(requireArg(args, "to"));
                 const result = await target.inject(ctx);
                 console.error(`Injected to: ${result.locator}`);
                 console.error(result.hint);
@@ -171,7 +192,7 @@ async function main() {
             break;
         }
         case "list": {
-            const source = pickSource(String(args.from ?? ""));
+            const source = pickSource(requireArg(args, "from"));
             if (!source.listSessions) {
                 throw new Error(`Source "${source.id}" does not support list`);
             }
@@ -187,7 +208,7 @@ async function main() {
             break;
         }
         case "doctor": {
-            const result = await diagnoseSession(String(args.session ?? ""), {
+            const result = await diagnoseSession(requireArg(args, "session"), {
                 from: typeof args.from === "string" ? args.from : undefined,
             });
             if (args.json) {
@@ -268,10 +289,21 @@ export async function pickLatestSession(source) {
     return sessions.reduce((latest, session) => {
         const latestTime = Date.parse(latest.updatedAt ?? "");
         const sessionTime = Date.parse(session.updatedAt ?? "");
-        if (Number.isNaN(sessionTime))
+        const latestNaN = Number.isNaN(latestTime);
+        const sessionNaN = Number.isNaN(sessionTime);
+        // Tie-break deterministically when timestamps are missing or equal:
+        // pick the larger session id lexicographically. Without this the
+        // result was input-order-dependent.
+        if (latestNaN && sessionNaN) {
+            return session.id > latest.id ? session : latest;
+        }
+        if (sessionNaN)
             return latest;
-        if (Number.isNaN(latestTime))
+        if (latestNaN)
             return session;
+        if (sessionTime === latestTime) {
+            return session.id > latest.id ? session : latest;
+        }
         return sessionTime > latestTime ? session : latest;
     });
 }
@@ -371,6 +403,8 @@ function pickTarget(id) {
 }
 function renderAsPrompt(ctx) {
     const lines = [];
+    lines.push(UNTRUSTED_FENCE_HEADER);
+    lines.push("");
     lines.push(`# Imported conversation from ${ctx.source.tool}` +
         (ctx.source.model ? ` (model: ${ctx.source.model})` : ""));
     if (ctx.source.sessionId) {
@@ -407,7 +441,7 @@ function printHelp() {
 Commands:
   continue --from <source> --to <target> (--latest | --session <id>) [--redact] [--as-prompt]
   export --from <source> --session <id> [--out file.json] [--redact]
-  import --to <target> --in file.{json,cbctx} [--redact] [--skip-doctor]
+  import --to <target> --in file.{json,cbctx} [--redact] [--skip-doctor] [--skip-hash-verify]
   pipe   --from <source> --session <id> --to <target> [--as-prompt] [--redact] [--verbose]
   list   --from <source>
   doctor --from <source> --session <id|path> [--json]

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isCbctxPackage } from "../schema/cbctx.js";
+import { isCbctxPackage, computeCbctxContentHash } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 export async function readPackage(filePath) {
@@ -40,6 +40,34 @@ export function packageToContext(pkg) {
  */
 export async function importPackage(filePath, target, opts = {}) {
     const pkg = await readPackage(filePath);
+    let hashStatus = "missing";
+    if (typeof pkg.contentHash === "string" && pkg.contentHash.length > 0) {
+        if (opts.skipHashVerify) {
+            hashStatus = "skipped";
+        }
+        else {
+            const expected = pkg.contentHash;
+            const actual = computeCbctxContentHash({
+                source: pkg.source,
+                summary: pkg.summary,
+                messages: pkg.messages,
+            });
+            if (expected !== actual) {
+                throw new Error(`Package contentHash mismatch — file may be tampered or corrupted.\n` +
+                    `  expected: ${expected}\n` +
+                    `  actual:   ${actual}\n` +
+                    `Override with --skip-hash-verify ONLY if you trust the source.`);
+            }
+            hashStatus = "ok";
+        }
+    }
+    else if (opts.skipHashVerify) {
+        hashStatus = "missing";
+    }
+    else {
+        throw new Error(`Package contentHash missing — integrity cannot be verified.\n` +
+            `Override with --skip-hash-verify ONLY if this is a trusted legacy package.`);
+    }
     let ctx = packageToContext(pkg);
     // Re-bucket the conversation under the receiver's cwd so target
     // adapters (Claude Code in particular, which keys session files by
@@ -68,6 +96,7 @@ export async function importPackage(filePath, target, opts = {}) {
         redaction: pkg.redaction,
         doctor: pkg.doctor,
         messageCount: pkg.messages.length,
+        hashStatus,
     };
     if (!opts.skipDoctor) {
         try {
@@ -121,6 +150,14 @@ export function formatImportSummary(s) {
     }
     if (s.preflightStatus) {
         lines.push(`  Doctor (preflight on import): ${s.preflightStatus} ${s.preflightScore}/100`);
+    }
+    if (s.hashStatus) {
+        const note = s.hashStatus === "ok"
+            ? "verified"
+            : s.hashStatus === "skipped"
+                ? "skipped (--skip-hash-verify)"
+                : "missing (legacy package — cannot verify integrity)";
+        lines.push(`  Content hash: ${note}`);
     }
     return lines.join("\n") + "\n";
 }

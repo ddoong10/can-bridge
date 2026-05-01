@@ -4,7 +4,7 @@
 > context.** A small TypeScript CLI that extracts a session from one tool,
 > normalizes it, and injects it into the other — both directions.
 
-[![tests](https://img.shields.io/badge/tests-20%2F20%20passing-brightgreen)](#verified-behavior)
+[![tests](https://img.shields.io/badge/tests-37%2F37%20passing-brightgreen)](#verified-behavior)
 [![status](https://img.shields.io/badge/status-v0.2%20portable%20handoff-blue)](#what-works)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -155,6 +155,15 @@ What goes in the `.cbctx` (`can-bridge.context.v1` schema):
 - `doctor` — schema-validity score captured at share time, surfaced
   during import alongside a fresh preflight check
 - `harnessVersion`, `createdAt`
+- `contentHash` — sha256 over canonical(source + summary + messages).
+  Importer rejects mismatched or missing hashes by default; pass
+  `--skip-hash-verify` only when you trust the source over an out-of-band
+  channel.
+
+Both inject paths (Claude Code and Codex) prepend an **untrusted-content
+fence** so the resuming agent treats the imported transcript as data, not
+as instructions. Round-trips strip and re-emit the fence cleanly so it
+never accumulates.
 
 Receiver-side import auto-detects the file format — pass either a
 `.cbctx` package or a plain NormalizedContext JSON to `--in`.
@@ -255,9 +264,9 @@ counterpart and is encoded into the output text.
   branches, we follow the **latest-leaf chain** (newest leaf by
   timestamp, walking back to root). Older sibling branches are dropped.
   Single-chain sessions behave exactly as before.
-- **Thinking blocks are dropped on cross-tool transfer.** They are signed
-  artifacts of the source model and don't make sense in another model's
-  context.
+- **Thinking blocks are dropped on cross-tool transfer AND on Claude Code
+  inject.** They are signed artifacts of the source model; empty
+  signatures get rejected on the receiving side.
 - **`source: "can-bridge-import"`** in our `session_meta.payload.source`
   falls back to `"unknown"` in Codex's `threads` table because Codex
   doesn't recognize the originator string. No functional impact.

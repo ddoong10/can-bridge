@@ -301,24 +301,41 @@ async function findClaudeSession(id: string): Promise<string | null> {
   } catch {
     return null;
   }
+  const matches: string[] = [];
   for (const dir of projectDirs) {
     const candidate = path.join(CLAUDE_PROJECTS_DIR, dir, `${id}.jsonl`);
     try {
       await fs.access(candidate);
-      return candidate;
+      matches.push(candidate);
     } catch {
       // try next
     }
   }
-  return null;
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous Claude Code session id "${id}": matched ${matches.length} files. ` +
+        `Pass the full .jsonl path instead.\n` +
+        matches.map((m) => `  ${m}`).join("\n"),
+    );
+  }
+  return matches[0]!;
 }
 
 async function findCodexRollout(id: string): Promise<string | null> {
-  let found: string | null = null;
+  const matches: string[] = [];
   await walkRollouts(CODEX_SESSIONS_DIR, async (file, fullPath) => {
-    if (!found && file.includes(id)) found = fullPath;
+    if (file.includes(id)) matches.push(fullPath);
   });
-  return found;
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous Codex rollout id "${id}": matched ${matches.length} files. ` +
+        `Pass the full .jsonl path instead.\n` +
+        matches.map((m) => `  ${m}`).join("\n"),
+    );
+  }
+  return matches[0]!;
 }
 
 async function walkRollouts(

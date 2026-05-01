@@ -12,6 +12,8 @@ import type {
   NormalizedMessage,
   ContentBlock,
 } from "../schema/context.js";
+import { HARNESS_SENTINEL } from "../version.js";
+import { UNTRUSTED_FENCE_HEADER } from "../transform/fence.js";
 
 /**
  * Claude Code stores each session as a JSONL file at:
@@ -88,6 +90,10 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
       if (typeof type !== "string") continue;
       const uuid = typeof entry.uuid === "string" ? entry.uuid : null;
       if (!uuid) continue;
+
+      // Drop fence lines we (or another can-bridge instance) prepended:
+      // they're scaffolding for the agent, not part of the transcript.
+      if (entry.isCanBridgeFence === true) continue;
 
       byUuid.set(uuid, {
         uuid,
@@ -267,6 +273,7 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
     }
     if (locator.endsWith(".jsonl")) return locator;
     const projectDirs = await fs.readdir(CLAUDE_PROJECTS_DIR);
+    const matches: string[] = [];
     for (const dir of projectDirs) {
       const candidate = path.join(
         CLAUDE_PROJECTS_DIR,
@@ -275,14 +282,24 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
       );
       try {
         await fs.access(candidate);
-        return candidate;
+        matches.push(candidate);
       } catch {
         // try next
       }
     }
-    throw new Error(
-      `Could not find Claude Code session "${locator}" under ${CLAUDE_PROJECTS_DIR}`,
-    );
+    if (matches.length === 0) {
+      throw new Error(
+        `Could not find Claude Code session "${locator}" under ${CLAUDE_PROJECTS_DIR}`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `Ambiguous Claude Code session id "${locator}": matched ${matches.length} files. ` +
+          `Pass the full .jsonl path instead.\n` +
+          matches.map((m) => `  ${m}`).join("\n"),
+      );
+    }
+    return matches[0]!;
   }
 
   // ─── TargetAdapter ────────────────────────────────────────────────
@@ -296,7 +313,7 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
     const sessionId = crypto.randomUUID();
     const filePath = path.join(dir, `${sessionId}.jsonl`);
 
-    const lines = buildClaudeJsonl(context, sessionId, cwd);
+    const lines = buildClaudeJsonl(context, sessionId, cwd, context.source.model);
     await fs.writeFile(filePath, lines.join("\n") + "\n", "utf8");
 
     return {
@@ -377,10 +394,35 @@ function buildClaudeJsonl(
   context: NormalizedContext,
   sessionId: string,
   cwd: string,
+  model: string | undefined,
 ): string[] {
   const out: string[] = [];
   let prevUuid: string | null = null;
   const fallbackTs = new Date().toISOString();
+
+  // Prepend an untrusted-content fence as the first user message so the
+  // resuming agent is reminded that the transcript that follows is data,
+  // not commands. Mirrors what we do via base_instructions on Codex.
+  // The `isCanBridgeFence` marker lets our extractor drop the fence on
+  // round-trip so it never accumulates across hops.
+  const fenceUuid = crypto.randomUUID();
+  out.push(
+    JSON.stringify({
+      parentUuid: null,
+      isSidechain: false,
+      userType: "external",
+      entrypoint: "cli",
+      type: "user",
+      uuid: fenceUuid,
+      timestamp: fallbackTs,
+      sessionId,
+      cwd,
+      version: HARNESS_SENTINEL,
+      isCanBridgeFence: true,
+      message: { role: "user", content: UNTRUSTED_FENCE_HEADER },
+    }),
+  );
+  prevUuid = fenceUuid;
 
   for (const msg of context.messages) {
     const uuid = crypto.randomUUID();
@@ -394,8 +436,8 @@ function buildClaudeJsonl(
       timestamp: msg.timestamp ?? fallbackTs,
       sessionId,
       cwd,
-      version: "can-bridge/0.2.0",
-      message: messageToClaudeContent(msg),
+      version: HARNESS_SENTINEL,
+      message: messageToClaudeContent(msg, model),
     };
     out.push(JSON.stringify(wrapper));
     prevUuid = uuid;
@@ -405,7 +447,8 @@ function buildClaudeJsonl(
 
 function messageToClaudeContent(
   msg: NormalizedMessage,
-): { role: string; content: unknown } {
+  model: string | undefined,
+): { role: string; content: unknown; model?: string } {
   // Anthropic rules:
   //  - assistant content: array of {text|thinking|tool_use} blocks
   //  - user content: string OR array of {text|tool_result} blocks
@@ -413,9 +456,10 @@ function messageToClaudeContent(
     const content = msg.content
       .map((b): unknown => {
         if (b.type === "text") return { type: "text", text: b.text };
-        if (b.type === "thinking") {
-          return { type: "thinking", thinking: b.text, signature: "" };
-        }
+        // thinking blocks are signed artifacts of the source model. Empty
+        // signatures get rejected by Claude's API, and the README promises
+        // they are dropped on cross-tool transfer. Drop here too.
+        if (b.type === "thinking") return null;
         if (b.type === "tool_use") {
           return {
             type: "tool_use",
@@ -428,7 +472,9 @@ function messageToClaudeContent(
         return null;
       })
       .filter((x) => x !== null);
-    return { role: "assistant", content };
+    // Real Claude Code rollouts carry `message.model` on assistant lines.
+    // Preserve it on round-trip so re-extracted source.model is non-empty.
+    return model ? { role: "assistant", content, model } : { role: "assistant", content };
   }
 
   // user — string when all-text, otherwise array.

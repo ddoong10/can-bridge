@@ -2,22 +2,27 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { CBCTX_SCHEMA_V1 } from "../schema/cbctx.js";
+import { CBCTX_SCHEMA_V1, computeCbctxContentHash } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
+import { HARNESS_VERSION } from "../version.js";
 const execFileAsync = promisify(execFile);
-const HARNESS_VERSION = "0.2.0";
 /**
  * Pure(ish) builder: takes an extracted NormalizedContext and produces a
  * CbctxPackage. The only I/O it does is shelling out to `git` when
  * includeRepoRef/includePatch are set; that is opt-in.
  */
 export async function buildPackage(ctx, opts = {}) {
-    let working = ctx;
+    // Strip thinking blocks before any further processing. They are
+    // signed artifacts of the source model and the README promises they
+    // are dropped on cross-tool transfer; including them in a shared
+    // package leaks them to receivers and lets a malicious sender hand-craft
+    // arbitrary "thinking" payloads that bypass the recipient's reasoning.
+    let working = stripThinkingBlocks(ctx);
     let redaction = { enabled: false, findings: [] };
     if (opts.redact) {
-        const before = countSecretCandidates(ctx);
-        working = redactContext(ctx);
+        const before = countSecretCandidates(working);
+        working = redactContext(working);
         const after = countSecretCandidates(working);
         redaction = {
             enabled: true,
@@ -32,15 +37,21 @@ export async function buildPackage(ctx, opts = {}) {
         }
     }
     const doctor = await snapshotDoctor(working);
+    const source = {
+        tool: working.source.tool,
+        sessionId: working.source.sessionId,
+        cwd: working.source.cwd,
+        capturedAt: working.source.capturedAt,
+        model: working.source.model,
+    };
+    const contentHash = computeCbctxContentHash({
+        source,
+        summary: working.summary,
+        messages: working.messages,
+    });
     const pkg = {
         schema: CBCTX_SCHEMA_V1,
-        source: {
-            tool: working.source.tool,
-            sessionId: working.source.sessionId,
-            cwd: working.source.cwd,
-            capturedAt: working.source.capturedAt,
-            model: working.source.model,
-        },
+        source,
         ...(repo ? { repo } : {}),
         ...(working.summary ? { summary: working.summary } : {}),
         messages: working.messages,
@@ -48,6 +59,7 @@ export async function buildPackage(ctx, opts = {}) {
         ...(doctor ? { doctor } : {}),
         createdAt: new Date().toISOString(),
         harnessVersion: HARNESS_VERSION,
+        contentHash,
     };
     return { pkg, redaction };
 }
@@ -151,6 +163,16 @@ function diffFindings(before, after) {
     }
     out.sort((a, b) => a.kind.localeCompare(b.kind));
     return out;
+}
+function stripThinkingBlocks(ctx) {
+    let touched = false;
+    const messages = ctx.messages.map((m) => {
+        const filtered = m.content.filter((b) => b.type !== "thinking");
+        if (filtered.length !== m.content.length)
+            touched = true;
+        return filtered === m.content ? m : { ...m, content: filtered };
+    });
+    return touched ? { ...ctx, messages } : ctx;
 }
 function serialize(ctx) {
     const parts = [];

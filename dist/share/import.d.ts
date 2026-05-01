@@ -15,6 +15,11 @@ export interface ImportPackageOptions {
      * useful for archival/debugging when no inject is happening.
      */
     keepSourceCwd?: boolean;
+    /**
+     * Skip the contentHash check. Off by default — kept for fallback when
+     * importing a legacy package that pre-dates the field.
+     */
+    skipHashVerify?: boolean;
 }
 export interface ImportSummary {
     source: CbctxPackage["source"];
@@ -24,6 +29,9 @@ export interface ImportSummary {
     messageCount: number;
     preflightStatus?: "ok" | "warn" | "fail";
     preflightScore?: number;
+    /** "ok" — hash present and matched; "skipped" — caller opted out;
+     *  "missing" — package has no hash (legacy v0.2 package). */
+    hashStatus?: "ok" | "skipped" | "missing";
 }
 export declare function readPackage(filePath: string): Promise<CbctxPackage>;
 /** Convert a CbctxPackage back into a NormalizedContext for the inject step. */
