@@ -34,7 +34,17 @@ import {
   formatDoctorResult,
 } from "../doctor/session-doctor.js";
 import type { NormalizedContext } from "../schema/context.js";
+import { isCbctxPackage } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
+import {
+  buildPackage,
+  defaultPackageName,
+  writePackage,
+} from "../share/share.js";
+import {
+  formatImportSummary,
+  importPackage,
+} from "../share/import.js";
 
 const SOURCES: Record<string, () => SourceAdapter> = {
   "claude-code": () => new ClaudeCodeAdapter(),
@@ -89,12 +99,80 @@ async function main() {
     }
     case "import": {
       const target = pickTarget(String(args.to ?? ""));
-      const raw = await fs.readFile(String(args.in ?? "/dev/stdin"), "utf8");
-      let ctx = JSON.parse(raw) as NormalizedContext;
-      if (args.redact) ctx = redactContext(ctx);
-      const result = await target.inject(ctx);
-      console.error(`Injected to: ${result.locator}`);
-      console.error(result.hint);
+      const inPath = String(args.in ?? "/dev/stdin");
+      const raw = await fs.readFile(inPath, "utf8");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (err) {
+        throw new Error(
+          `Invalid JSON in --in: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      // Auto-detect: .cbctx package vs raw NormalizedContext export.
+      if (isCbctxPackage(parsed)) {
+        const { result, summary } = await importPackage(inPath, target, {
+          skipDoctor: args["skip-doctor"] === true,
+          redactAdditional: args.redact === true,
+        });
+        process.stderr.write(formatImportSummary(summary));
+        console.error(`Injected to: ${result.locator}`);
+        console.error(result.hint);
+      } else {
+        let ctx = parsed as NormalizedContext;
+        if (args.redact) ctx = redactContext(ctx);
+        const result = await target.inject(ctx);
+        console.error(`Injected to: ${result.locator}`);
+        console.error(result.hint);
+      }
+      break;
+    }
+    case "share": {
+      const source = pickSource(String(args.from ?? ""));
+      let sessionId = typeof args.session === "string" ? args.session : "";
+      if (!sessionId && args.latest) {
+        const latest = await pickLatestSession(source);
+        if (!latest) throw new Error(`No sessions found for source "${source.id}"`);
+        sessionId = latest.id;
+        console.error(
+          `Latest ${source.id} session: ${latest.id}` +
+            (latest.updatedAt ? `  (updated ${latest.updatedAt})` : ""),
+        );
+      }
+      if (!sessionId) {
+        throw new Error("share: provide --session <id> or --latest");
+      }
+      const ctx = await source.extract(sessionId);
+      const { pkg } = await buildPackage(ctx, {
+        redact: args.redact === true,
+        includeRepoRef:
+          args["include-repo-ref"] === true || args["include-patch"] === true,
+        includePatch: args["include-patch"] === true,
+        repoCwd: typeof args.cwd === "string" ? args.cwd : undefined,
+      });
+      const outPath =
+        typeof args.out === "string"
+          ? args.out
+          : args.store === "stdout"
+            ? "-"
+            : defaultPackageName(pkg.source.sessionId);
+      const written = await writePackage(pkg, outPath);
+      if (written) {
+        console.error(
+          `Wrote ${written} (${pkg.messages.length} messages` +
+            (pkg.redaction.enabled
+              ? `, redacted: ${pkg.redaction.findings
+                  .map((f) => `${f.kind}:${f.count}`)
+                  .join(", ") || "none observed"}`
+              : "") +
+            (pkg.repo ? `, repo: ${pkg.repo.commit?.slice(0, 12) ?? "ref"}` : "") +
+            ")",
+        );
+        console.error(``);
+        console.error(`Share this file with your friend.`);
+        console.error(`On their machine:`);
+        console.error(`  harness import --to <claude-code|codex> --in ${written}`);
+      }
       break;
     }
     case "pipe": {
@@ -383,10 +461,12 @@ function printHelp() {
 Commands:
   continue --from <source> --to <target> (--latest | --session <id>) [--redact] [--as-prompt]
   export --from <source> --session <id> [--out file.json] [--redact]
-  import --to <target> --in file.json [--redact]
+  import --to <target> --in file.{json,cbctx} [--redact] [--skip-doctor]
   pipe   --from <source> --session <id> --to <target> [--as-prompt] [--redact] [--verbose]
   list   --from <source>
   doctor --from <source> --session <id|path> [--json]
+  share  --from <source> (--session <id> | --latest) [--redact] [--include-repo-ref]
+                         [--include-patch] [--out file.cbctx | --store stdout]
   mailbox <send|inbox|thread|all>
 
 Flags:

@@ -18,6 +18,18 @@ import {
 } from "../dist/doctor/session-doctor.js";
 import { pickLatestSession } from "../dist/cli/index.js";
 import { redactText, redactContext } from "../dist/transform/redactor.js";
+import {
+  buildPackage,
+  defaultPackageName,
+  writePackage,
+} from "../dist/share/share.js";
+import {
+  formatImportSummary,
+  importPackage,
+  packageToContext,
+  readPackage,
+} from "../dist/share/import.js";
+import { CBCTX_SCHEMA_V1, isCbctxPackage } from "../dist/schema/cbctx.js";
 
 const SAMPLE_SESSION_DIR = path.join(
   os.homedir(),
@@ -701,4 +713,110 @@ test("mailbox stores agent messages and filters inbox/thread views", async () =>
   assert.match(formatMessages(thread), /Please review the adapter tests/);
 
   await fs.rm(temp, { recursive: true, force: true });
+});
+
+// ─── .cbctx share / import ──────────────────────────────────────────
+
+test("share builds a v1 package with redaction findings + valid schema", async () => {
+  const ctx = {
+    schemaVersion: "0.1",
+    source: { tool: "claude-code", model: "claude-opus-4-7", sessionId: "abc-1" },
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: "my key is sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA" }],
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+      },
+    ],
+  };
+
+  const { pkg, redaction } = await buildPackage(ctx, { redact: true });
+
+  assert.equal(pkg.schema, CBCTX_SCHEMA_V1);
+  assert.ok(isCbctxPackage(pkg), "pkg must satisfy isCbctxPackage");
+  assert.equal(pkg.source.tool, "claude-code");
+  assert.equal(pkg.messages.length, 2);
+  assert.equal(redaction.enabled, true);
+  assert.ok(
+    redaction.findings.some((f) => f.kind === "anthropic-key" && f.count >= 1),
+    "should report at least one anthropic-key redaction finding",
+  );
+  // Original ctx must not be mutated.
+  assert.match(
+    ctx.messages[0].content[0].text,
+    /sk-ant-api03-/,
+    "input context must not be redacted in place",
+  );
+});
+
+test("writePackage + readPackage round-trip preserves schema", async () => {
+  const ctx = {
+    schemaVersion: "0.1",
+    source: { tool: "codex", sessionId: "rt-1" },
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hi" }] },
+    ],
+  };
+  const { pkg } = await buildPackage(ctx);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-"));
+  const filePath = path.join(tempDir, defaultPackageName(pkg.source.sessionId));
+  const written = await writePackage(pkg, filePath);
+  assert.ok(written.endsWith(".cbctx"));
+
+  const reread = await readPackage(written);
+  assert.equal(reread.schema, pkg.schema);
+  assert.equal(reread.messages.length, pkg.messages.length);
+  assert.equal(reread.source.tool, "codex");
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("importPackage round-trips through the Codex adapter", async () => {
+  const ctx = {
+    schemaVersion: "0.1",
+    source: { tool: "claude-code", sessionId: "imp-1", cwd: process.cwd() },
+    messages: [
+      { role: "user", content: [{ type: "text", text: "first user message" }] },
+      { role: "assistant", content: [{ type: "text", text: "ack" }] },
+    ],
+  };
+  const { pkg } = await buildPackage(ctx);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-cbctx-imp-"));
+  const filePath = path.join(tempDir, "test.cbctx");
+  await writePackage(pkg, filePath);
+
+  const target = new CodexAdapter();
+  const { result, summary } = await importPackage(filePath, target);
+  assert.ok(result.locator.endsWith(".jsonl"));
+  assert.equal(summary.messageCount, 2);
+  assert.equal(summary.source.tool, "claude-code");
+  assert.match(formatImportSummary(summary), /Originally from claude-code/);
+
+  // Verify the rollout is parseable by the Codex extractor too.
+  const reExtract = await target.extract(result.locator);
+  const userMsg = reExtract.messages.find((m) => m.role === "user");
+  assert.ok(userMsg);
+  assert.equal(userMsg.content[0].text, "first user message");
+
+  // Cleanup: rollout file + tmp dir.
+  await fs.unlink(result.locator).catch(() => {});
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("packageToContext exposes the embedded redaction/repo/doctor as metadata", async () => {
+  const ctx = {
+    schemaVersion: "0.1",
+    source: { tool: "claude-code", sessionId: "meta-1" },
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+    ],
+  };
+  const { pkg } = await buildPackage(ctx, { redact: true });
+  const back = packageToContext(pkg);
+  assert.ok(back.metadata);
+  assert.equal(back.metadata.cbctxRedaction.enabled, true);
+  assert.equal(back.metadata.cbctxHarnessVersion, pkg.harnessVersion);
 });

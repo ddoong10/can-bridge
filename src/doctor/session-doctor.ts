@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import type { NormalizedContext } from "../schema/context.js";
 
 type FormatId = "claude-code" | "codex" | "unknown";
 type FindingLevel = "error" | "warn" | "info";
@@ -151,6 +152,85 @@ export async function diagnoseSession(
     score,
     lineCount: rawLines.filter((l) => l.trim().length > 0).length,
     parsedLineCount: parsed.length,
+    findings,
+  };
+}
+
+/**
+ * Lightweight, in-memory variant of {@link diagnoseSession} for callers
+ * that already have a `NormalizedContext` (e.g. share/import). Validates
+ * structural invariants of messages/blocks instead of raw JSONL.
+ */
+export async function diagnoseSessionFromContext(
+  ctx: NormalizedContext,
+): Promise<DoctorResult> {
+  const findings: DoctorFinding[] = [];
+  const validRoles = new Set(["user", "assistant", "system", "tool"]);
+  const validBlocks = new Set(["text", "thinking", "tool_use", "tool_result"]);
+
+  if (ctx.messages.length === 0) {
+    findings.push({
+      level: "error",
+      code: "NO_MESSAGES",
+      message: "NormalizedContext has zero messages",
+    });
+  }
+
+  for (let i = 0; i < ctx.messages.length; i++) {
+    const m = ctx.messages[i];
+    if (!m) continue;
+    if (!validRoles.has(m.role)) {
+      findings.push({
+        level: "warn",
+        code: "UNKNOWN_ROLE",
+        message: `message ${i + 1}: unknown role "${m.role}"`,
+      });
+    }
+    if (!Array.isArray(m.content) || m.content.length === 0) {
+      findings.push({
+        level: "error",
+        code: "EMPTY_MESSAGE",
+        message: `message ${i + 1}: no content`,
+      });
+      continue;
+    }
+    for (let j = 0; j < m.content.length; j++) {
+      const b = m.content[j];
+      if (!b) continue;
+      if (!validBlocks.has(b.type)) {
+        findings.push({
+          level: "warn",
+          code: "UNKNOWN_BLOCK",
+          message:
+            `message ${i + 1}, block ${j + 1}: unknown type "${b.type}"`,
+        });
+      }
+    }
+  }
+
+  const score = scoreFindings(findings);
+  const status: DoctorResult["status"] = findings.some(
+    (f) => f.level === "error",
+  )
+    ? "fail"
+    : findings.some((f) => f.level === "warn")
+      ? "warn"
+      : "ok";
+
+  const detectedFormat: FormatId =
+    ctx.source.tool === "claude-code"
+      ? "claude-code"
+      : ctx.source.tool === "codex"
+        ? "codex"
+        : "unknown";
+
+  return {
+    filePath: "<NormalizedContext>",
+    detectedFormat,
+    status,
+    score,
+    lineCount: ctx.messages.length,
+    parsedLineCount: ctx.messages.length,
     findings,
   };
 }

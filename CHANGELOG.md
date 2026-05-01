@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — v0.2-dev
+
+### Added
+
+- **`.cbctx` portable context package** (`can-bridge.context.v1` schema):
+  ship a conversation to a teammate by file. New `harness share` produces
+  it (with optional `--redact`, `--include-repo-ref`, `--include-patch`,
+  embedded doctor verdict). Existing `harness import` auto-detects
+  `.cbctx` vs raw `NormalizedContext` JSON.
+- **`harness share` CLI** — `--from <src> (--session <id> | --latest)`,
+  defaults to `./<sessionId>.cbctx`, also `--store stdout` for piping.
+- **`harness doctor`** — schema-drift detector for both Claude Code and
+  Codex sessions; in-memory variant `diagnoseSessionFromContext` for the
+  share/import preflight.
+- **`harness continue`** — friendliest one-shot: `--latest` picks the
+  newest source session, runs doctor preflight, then injects.
+- **Codex sqlite pre-registration** at inject time: `codex resume <id>`
+  TUI works immediately without an `exec resume` bootstrap step. Silent
+  fallback when `node:sqlite` isn't loadable (Node 22.x without
+  `--experimental-sqlite`).
+- **`parentUuid` branch handling** in Claude Code extract — picks the
+  latest-leaf chain, walks past attachment / hook intermediaries.
+- **`[error] ` prefix decode** on Codex extract — `tool_result.isError`
+  now round-trips losslessly.
+
+### Tests
+
+11 → 18 passing. New: branch reconstruction, linear single-chain
+regression, isError round-trip, doctor preflight, share schema, write/read
+round-trip, importPackage round-trip, packageToContext metadata.
+
+### Docs
+
+- `docs/ALIAS_SHARE_SPEC.md` — v1 marked IMPLEMENTED; v2/v3 planned.
+- `docs/RELATED_PROJECTS.md` — neighborhood scan (ai-session-bridge,
+  AgentBridge, CCB, etc.).
+- `docs/DECISIONS.md` D-0007 — positioning as context-interchange core.
+
 ## v0.1.0 — 2026-04-30
 
 First public-ready release. Bidirectional Claude Code ⇄ Codex with

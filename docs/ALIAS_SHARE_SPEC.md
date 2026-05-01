@@ -1,6 +1,10 @@
 # Alias Share Design Spec
 
-Status: draft
+Status: v1 file-share **IMPLEMENTED** — `harness share` / `harness import`
+write and read a `can-bridge.context.v1` `.cbctx` package with optional
+redaction, repo metadata (`--include-repo-ref` / `--include-patch`), and
+embedded doctor verdict. v2 (Gist short-key) and v3 (server) remain
+planned.
 Date: 2026-05-01
 
 ## Problem

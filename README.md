@@ -87,6 +87,51 @@ node dist/cli/index.js pipe \
   --from <src> --session <id> --to <target> --as-prompt > seed.md
 ```
 
+## Share with a friend (`.cbctx`)
+
+`pipe` only works on the same machine. To send a conversation to a
+teammate over Slack/email/Discord, package it as a portable `.cbctx`
+file. The receiver imports it into whichever tool they use (Claude Code
+or Codex).
+
+**Sender:**
+
+```bash
+node dist/cli/index.js share \
+  --from claude-code --latest --redact --include-repo-ref \
+  --out my-session.cbctx
+# → Wrote my-session.cbctx (484 messages, repo: 731842b...)
+# → Share this file with your friend.
+```
+
+**Receiver (any machine, either tool):**
+
+```bash
+node dist/cli/index.js import --to codex --in my-session.cbctx
+#   Originally from claude-code (claude-opus-4-7), 484 messages.
+#   Original session: 8131efb2-...
+#   Repo: github.com/ddoong10/can-bridge (branch main) @ 731842b...
+#   Doctor (at share time): ok 100/100
+#   Doctor (preflight on import): ok 100/100
+# → Injected to: ~/.codex/sessions/.../rollout-...jsonl
+codex resume <printed-uuid>
+```
+
+What goes in the `.cbctx` (`can-bridge.context.v1` schema):
+
+- `source` — which tool / model / sessionId / cwd the conversation came from
+- `messages` — normalized transcript (Anthropic-style blocks)
+- `redaction` — flags + per-kind counts of secrets that were masked
+- `repo` (opt-in) — git remote / branch / commit so the receiver can
+  `git checkout` the same code state. Add `--include-patch` to bundle
+  the dirty diff too.
+- `doctor` — schema-validity score captured at share time, surfaced
+  during import alongside a fresh preflight check
+- `harnessVersion`, `createdAt`
+
+Receiver-side import auto-detects the file format — pass either a
+`.cbctx` package or a plain NormalizedContext JSON to `--in`.
+
 ## Agent mailbox
 
 Claude Code and Codex cannot directly share hidden model state, but they can
