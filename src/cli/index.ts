@@ -7,13 +7,21 @@
  *   harness import --to codex --in file.json
  *   harness pipe   --from claude-code --session <id> --to codex
  *   harness pipe   --from claude-code --session <id> --to codex --as-prompt
+ *   harness continue --from claude-code --to codex --latest
+ *   harness doctor --from codex --session <id|path> [--json]
  *   harness list   --from claude-code
  */
 
 import { promises as fs } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { ClaudeCodeAdapter } from "../adapters/claude-code.js";
 import { CodexAdapter } from "../adapters/codex.js";
-import type { SourceAdapter, TargetAdapter } from "../adapters/base.js";
+import type {
+  InjectionResult,
+  SessionSummary,
+  SourceAdapter,
+  TargetAdapter,
+} from "../adapters/base.js";
 import {
   formatMessages,
   listInbox,
@@ -21,6 +29,10 @@ import {
   readMessages,
   sendMessage,
 } from "../collab/mailbox.js";
+import {
+  diagnoseSession,
+  formatDoctorResult,
+} from "../doctor/session-doctor.js";
 import type { NormalizedContext } from "../schema/context.js";
 import { redactContext } from "../transform/redactor.js";
 
@@ -119,6 +131,22 @@ async function main() {
       console.error(`(${sessions.length} sessions)`);
       break;
     }
+    case "continue": {
+      await runContinue(args);
+      break;
+    }
+    case "doctor": {
+      const result = await diagnoseSession(String(args.session ?? ""), {
+        from: typeof args.from === "string" ? args.from : undefined,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      } else {
+        process.stdout.write(formatDoctorResult(result));
+      }
+      if (result.status === "fail") process.exitCode = 1;
+      break;
+    }
     case "mailbox": {
       await runMailbox(rest);
       break;
@@ -134,6 +162,97 @@ async function main() {
       printHelp();
       process.exit(1);
   }
+}
+
+async function runContinue(args: Record<string, string | boolean>) {
+  const from = requireArg(args, "from");
+  const to = requireArg(args, "to");
+  const source = pickSource(from);
+  const target = pickTarget(to);
+
+  const session = args.latest
+    ? await pickLatestSession(source)
+    : typeof args.session === "string"
+      ? { id: args.session }
+      : null;
+  if (!session) {
+    throw new Error("Missing --session <id|path> or --latest");
+  }
+
+  if (args.latest) {
+    console.error(
+      `Selected latest ${from} session: ${session.id}` +
+        (session.updatedAt ? ` (${session.updatedAt})` : ""),
+    );
+  }
+
+  const doctor = await diagnoseSession(session.id, { from });
+  if (doctor.status === "fail") {
+    process.stderr.write(formatDoctorResult(doctor));
+    throw new Error("Doctor preflight failed; not injecting target session");
+  }
+  if (args.verbose || doctor.status === "warn") {
+    process.stderr.write(formatDoctorResult(doctor));
+  } else {
+    console.error(
+      `Doctor ${doctor.detectedFormat}: ${doctor.status} (${doctor.score}/100)`,
+    );
+  }
+
+  let ctx = await source.extract(session.id);
+  if (args.redact) ctx = redactContext(ctx);
+  console.error(
+    `Extracted ${ctx.messages.length} messages from ${ctx.source.tool}` +
+      (ctx.source.model ? ` (${ctx.source.model})` : "") +
+      (args.redact ? " — redacted" : ""),
+  );
+
+  if (args["as-prompt"]) {
+    process.stdout.write(renderAsPrompt(ctx));
+    return;
+  }
+
+  const result = await target.inject(ctx);
+  printContinueResult(to, result);
+}
+
+export async function pickLatestSession(
+  source: SourceAdapter,
+): Promise<SessionSummary> {
+  if (!source.listSessions) {
+    throw new Error(`Source "${source.id}" does not support --latest`);
+  }
+  const sessions = await source.listSessions();
+  if (sessions.length === 0) {
+    throw new Error(`No sessions found for source "${source.id}"`);
+  }
+  return sessions.reduce((latest, session) => {
+    const latestTime = Date.parse(latest.updatedAt ?? "");
+    const sessionTime = Date.parse(session.updatedAt ?? "");
+    if (Number.isNaN(sessionTime)) return latest;
+    if (Number.isNaN(latestTime)) return session;
+    return sessionTime > latestTime ? session : latest;
+  });
+}
+
+function printContinueResult(to: string, result: InjectionResult) {
+  console.error(`Injected to: ${result.locator}`);
+  const sessionId =
+    typeof result.details?.sessionId === "string"
+      ? result.details.sessionId
+      : undefined;
+  if ((to === "codex" || to === "codex-cli") && sessionId) {
+    console.error("");
+    console.error("Next:");
+    console.error(`  codex resume ${sessionId}`);
+    console.error("");
+    console.error("Or one non-interactive turn:");
+    console.error(
+      `  codex exec --skip-git-repo-check resume ${sessionId} "<your prompt>"`,
+    );
+    return;
+  }
+  console.error(result.hint);
 }
 
 async function runMailbox(argv: string[]) {
@@ -262,10 +381,12 @@ function printHelp() {
   process.stderr.write(`harness — LLM Context Harness
 
 Commands:
+  continue --from <source> --to <target> (--latest | --session <id>) [--redact] [--as-prompt]
   export --from <source> --session <id> [--out file.json] [--redact]
   import --to <target> --in file.json [--redact]
   pipe   --from <source> --session <id> --to <target> [--as-prompt] [--redact] [--verbose]
   list   --from <source>
+  doctor --from <source> --session <id|path> [--json]
   mailbox <send|inbox|thread|all>
 
 Flags:
@@ -293,7 +414,13 @@ Flags:
 `);
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.stack ?? err.message : err);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === process.argv[1]
+  : false;
+
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.stack ?? err.message : err);
+    process.exit(1);
+  });
+}

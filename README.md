@@ -4,7 +4,7 @@
 > context.** A small TypeScript CLI that extracts a session from one tool,
 > normalizes it, and injects it into the other — both directions.
 
-[![tests](https://img.shields.io/badge/tests-11%2F11%20passing-brightgreen)](#verified-behavior)
+[![tests](https://img.shields.io/badge/tests-14%2F14%20passing-brightgreen)](#verified-behavior)
 [![status](https://img.shields.io/badge/status-v0.1%20bidirectional-blue)](#what-works)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -46,9 +46,18 @@ are intentionally dropped (internal to the source model).
 npm install
 npm run build
 
+# Easiest path: continue the latest Claude Code session in Codex
+node dist/cli/index.js continue --from claude-code --to codex --latest
+# Then run the printed command:
+#   codex resume <printed-uuid>
+
 # List sessions on either side
 node dist/cli/index.js list --from claude-code
 node dist/cli/index.js list --from codex
+
+# Check a session file for known schema markers before trusting a conversion
+node dist/cli/index.js doctor --from codex --session <codex-uuid-or-jsonl>
+node dist/cli/index.js doctor --from claude-code --session <claude-session-id-or-jsonl>
 
 # Forward: Claude Code → Codex
 node dist/cli/index.js pipe \
@@ -65,7 +74,9 @@ node dist/cli/index.js pipe \
   --to claude-code
 # Then in the same cwd:
 #   cd <project-cwd>
-#   claude --resume     # session appears in the picker
+#   claude --resume <printed-uuid>
+# or:
+#   claude --print --resume <printed-uuid> "<prompt>"
 ```
 
 If a target rejects an authored file (rare; means the format has changed),
@@ -129,6 +140,10 @@ sessions (skips if absent). It verifies:
    chain instead of blindly flattening file order.
 6. **Agent mailbox** — local mailbox send, inbox, thread, and all-message
    flows are covered.
+7. **Doctor** — known Claude Code and Codex JSONL markers produce
+   compatibility scores and mismatch codes.
+8. **Continue command** — `--latest` selects the newest source session by
+   `updatedAt` and runs doctor preflight before injection.
 
 ### Live end-to-end demos (2026-04-30)
 
@@ -137,10 +152,15 @@ sessions (skips if absent). It verifies:
   file by UUID, recall the original first message verbatim, auto-register
   a row in `~/.codex/state_5.sqlite` on first resume, and append the new
   turn back to the rollout file on disk.
+- **Friendly latest continue**: `node dist/cli/index.js continue --from
+  claude-code --to codex --latest` selected the latest Claude Code session,
+  passed doctor preflight, extracted 409 messages, and wrote a resumable
+  Codex rollout.
 - **Codex → Claude Code**: a 158-message Codex session was injected as
-  `~/.claude/projects/<cwd>/<uuid>.jsonl` and **shows up in `claude
-  --resume`'s picker** (verified by file-size match and first-message
-  match). Pick it from the picker to continue the conversation in Claude.
+  `~/.claude/projects/<cwd>/<uuid>.jsonl`, showed up in `claude
+  --resume`'s picker, and current Claude Code also supports direct
+  `claude --resume <uuid>` / `claude --print --resume <uuid> "<prompt>"`
+  resume by session id.
 
 The stderr line `failed to record rollout items: thread <uuid> not found`
 on first Codex resume is cosmetic — it comes from a *secondary* table
@@ -168,12 +188,12 @@ counterpart and is encoded into the output text.
   context.
 - **`source: "harness-import"`** in our `session_meta.payload.source` falls
   back to `"unknown"` in Codex's `threads` table. No functional impact.
-- **Auto-resume by id is not exposed by Claude Code.** The injected file
-  shows up in `claude --resume`'s picker; user picks manually.
-- **No schema-drift detector yet.** If either tool ships a format change,
-  `harness pipe` will silently emit a stale shape that may fail at resume
-  time. A `harness doctor` subcommand to validate before write is on the
-  v1 list.
+- **Claude Code resume by id depends on CLI version.** Current versions expose
+  `claude --resume <uuid>` and `claude --print --resume <uuid> "<prompt>"`;
+  older versions may require choosing the injected file from `claude --resume`.
+- **`harness doctor` is heuristic.** It catches known structural drift before
+  conversion, but it is not a formal vendor schema validator and should be
+  updated whenever local Claude Code or Codex formats change.
 
 ## Architecture
 
@@ -198,9 +218,12 @@ src/
     claude-code.ts             Claude Code source + target
     codex.ts                   Codex CLI source + target
   cli/index.ts                 harness CLI
+  collab/mailbox.ts            Local agent mailbox
+  doctor/session-doctor.ts     Session schema marker checks
 tests/
-  smoke.test.mjs               Round-trip + reverse-direction tests
+  smoke.test.mjs               Round-trip, doctor, and mailbox tests
 docs/
+  ALIAS_SHARE_SPEC.md          Short alias + friend sharing design
   OPEN_QUESTIONS.md            Format questions: resolved vs still open
   PRESENTATION_NOTES.md        Talking points for live demo / writeup
   RELATED_PROJECTS.md          Adjacent projects and positioning notes

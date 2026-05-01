@@ -3,6 +3,142 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-05-01 - Claude Code (sqlite pre-registration)
+
+### Status
+
+Closed the "TUI `codex resume <id>` says No saved session found on first try"
+issue the user hit. inject() now pre-registers a row in
+`~/.codex/state_5.sqlite threads`, so the TUI sees the session immediately
+without an `exec resume` bootstrap step.
+
+### Changed
+
+- `src/adapters/codex.ts` — added `tryRegisterCodexThread()`. Uses the
+  built-in `node:sqlite` module (Node 22.5+). INSERT OR REPLACE into the
+  `threads` table with the same columns Codex itself populates on first
+  resume (id, rollout_path, cwd, title, first_user_message, model, etc.).
+  Hint message reflects success or fallback. Silent degrade if sqlite
+  isn't loadable — rollout file is still written and `codex exec resume`
+  bootstraps the row as before.
+
+### Verified
+
+- 14/14 smoke tests still pass.
+- Live: `harness pipe --from claude-code --session ... --to codex` printed
+  the new "Could not pre-register in sqlite: node:sqlite not loadable"
+  fallback hint on this Node 22.11 machine (no NODE_OPTIONS set), exactly
+  as designed.
+
+### Next Agent
+
+- Node 22.x users currently need `NODE_OPTIONS=--experimental-sqlite` for
+  auto-registration. Consider a small `bin/harness.js` wrapper that
+  re-spawns with the flag, so the experience is transparent across Node
+  versions.
+
+## 2026-05-01 - Codex
+
+### Status
+
+Verified live bidirectional resume after Claude quota recovered.
+
+### Changed
+
+- Updated the Claude Code injection hint to use current CLI support for
+  `claude --resume <uuid>` and `claude --print --resume <uuid> "<prompt>"`,
+  with the interactive picker as fallback.
+- Updated README/presentation notes to stop claiming Claude Code cannot
+  auto-resume by id.
+
+### Verified
+
+- `node dist\cli\index.js continue --from claude-code --to codex --latest`:
+  selected Claude session `8131efb2-19ac-407b-a538-8d94a94258e5`, doctor ok,
+  extracted 410 messages, and wrote Codex rollout
+  `6429971a-5bb2-41aa-93dc-c26f3e4a9512`.
+- `codex exec --skip-git-repo-check resume 6429971a-5bb2-41aa-93dc-c26f3e4a9512
+  "<prompt>"`: live Codex answered `can-bridge`, proving the imported
+  context was readable.
+- `node dist\cli\index.js continue --from codex --to claude-code --session
+  6429971a-5bb2-41aa-93dc-c26f3e4a9512`: doctor ok, extracted 644 messages,
+  and wrote Claude session `c2c7b876-99db-45a4-a50b-5d1a7ed88d18`.
+- `node dist\cli\index.js doctor --from claude-code --session
+  c2c7b876-99db-45a4-a50b-5d1a7ed88d18`: ok, 100/100, 644/644 lines parsed.
+- `claude --print --resume c2c7b876-99db-45a4-a50b-5d1a7ed88d18 --model sonnet
+  --max-budget-usd 1 "<prompt>"`: live Claude answered `can-bridge`, proving
+  the imported Codex context was readable by Claude Code.
+- `npm test`: 14/14 pass after rebuilding.
+
+## 2026-05-01 - Codex
+
+### Status
+
+Implemented the friendly latest-continue command.
+
+### Changed
+
+- Added `harness continue --from <source> --to <target> --latest`.
+- The command picks the newest source session by `updatedAt`, runs doctor
+  preflight, extracts context, then injects into the target.
+- Supports `--as-prompt` fallback and `--redact`.
+- Exported `pickLatestSession()` for regression coverage.
+- Updated `README.md` and `TASK_CONTEXT.md`.
+
+### Verified
+
+- `npm test`: 14/14 pass.
+- `node dist\cli\index.js continue --from claude-code --to codex --latest --as-prompt`:
+  selected `8131efb2-19ac-407b-a538-8d94a94258e5`, doctor ok, extracted 409
+  messages, rendered prompt.
+- `node dist\cli\index.js continue --from claude-code --to codex --latest`:
+  wrote Codex rollout
+  `C:\Users\ddoon\.codex\sessions\2026\05\01\rollout-2026-05-01T08-41-46-537Z-f4e4a25a-9cc8-4174-a2f1-2c507271ff03.jsonl`
+  and printed `codex resume f4e4a25a-9cc8-4174-a2f1-2c507271ff03`.
+
+### Next Agent
+
+- Add an interactive session picker for non-latest workflows.
+- Consider a packaged `can-bridge` binary name instead of requiring
+  `node dist\cli\index.js`.
+
+## 2026-05-01 - Codex
+
+### Status
+
+Completed the alias/share design spec and `harness doctor` prototype.
+
+### Changed
+
+- Added `docs/ALIAS_SHARE_SPEC.md` covering short aliases, friend sharing,
+  Gist vs hosted server vs IPFS, alias schema, CLI shape, expiry, auth, and
+  encryption trade-offs.
+- Added `src/doctor/session-doctor.ts` with Claude Code/Codex JSONL marker
+  validation, compatibility score, status, and finding codes.
+- Added `harness doctor --from <source> --session <id|path> [--json]`.
+- Added doctor smoke tests to `tests/smoke.test.mjs`.
+- Updated doctor to treat Claude `last-prompt`, `queue-operation`, and
+  `system` wrapper lines as compatible ignored runtime records.
+- Updated `README.md`, `TASK_CONTEXT.md`, `docs/OPEN_QUESTIONS.md`, and
+  `docs/DECISIONS.md`.
+
+### Verified
+
+- `npm test`: 13/13 pass.
+- `node dist\cli\index.js doctor --from codex --session 019de2a3-60af-7342-9052-cdf43ecca9a0`:
+  ok, 100/100, 231/231 lines parsed.
+- `node dist\cli\index.js doctor --from claude-code --session 8131efb2-19ac-407b-a538-8d94a94258e5`:
+  ok, 100/100, 2563/2563 lines parsed.
+- Latest Claude Code context extracts successfully: 409 normalized messages,
+  source model `claude-opus-4-7`, cwd `C:\Users\ddoon\Desktop\context_switching`.
+
+### Next Agent
+
+- Decide whether `pipe` should call `doctor` by default before direct session
+  injection, or expose it as `--doctor`.
+- Alias/share implementation can start with the local registry commands:
+  `keep`, `aliases`, `show`, and `forget`.
+
 ## 2026-04-30 - Codex
 
 ### Status

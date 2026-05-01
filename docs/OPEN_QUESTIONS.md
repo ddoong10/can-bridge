@@ -28,8 +28,8 @@ Update this doc as we resolve each one — the answers drive code changes in
   across multiple JSONL lines that share the same `message.id`. The adapter
   coalesces them by id.
 - **Model name**: `message.model` on assistant lines (e.g. `claude-opus-4-7`).
-- **`parentUuid`** forms a tree but in practice we iterate file order;
-  branch handling is a v1 problem.
+- **`parentUuid`** forms a tree. The extractor now reconstructs the
+  latest-leaf chain and skips non-message intermediaries.
 
 ### Codex CLI rollout format
 - **Path**: `~/.codex/sessions/YYYY/MM/DD/rollout-<iso-ts>-<uuid>.jsonl`
@@ -137,6 +137,10 @@ five real rollouts contained tool calls. Inspected one directly:
   wrapper shape we emit (`{type, uuid, parentUuid, timestamp, sessionId,
   cwd, version, message}`) is sufficient — no sqlite/index registration
   needed on the Claude Code side.
+- **Codex → Claude Code direct resume by id works on current Claude Code**:
+  `claude --print --resume c2c7b876-99db-45a4-a50b-5d1a7ed88d18 ...`
+  answered `can-bridge` after a Codex-origin context import on 2026-05-01.
+  Keep the picker as fallback for older CLI versions.
 
 ## Resolved 2026-04-30 (continued — round-trip closure & branch handling)
 
@@ -159,6 +163,23 @@ five real rollouts contained tool calls. Inspected one directly:
   session has multiple branches" + "extract preserves linear single-chain
   ordering".
 
+## Resolved 2026-05-01 (doctor prototype)
+
+- **`harness doctor` schema-drift detector.** `src/doctor/session-doctor.ts`
+  scans Claude Code and Codex JSONL files for known wrapper/content markers,
+  reports `ok|warn|fail`, a 0-100 compatibility score, and line-level finding
+  codes. CLI usage:
+  `harness doctor --from codex --session <id-or-jsonl> [--json]`.
+- **Current scope:** heuristic marker validation, not an official vendor schema.
+  It checks parseability, format detection/mismatch, Claude `uuid`/
+  `parentUuid`/message content blocks, Codex `session_meta`, `response_item`,
+  `function_call`, and `function_call_output` shapes. Claude `last-prompt`,
+  `queue-operation`, and `system` wrapper lines plus Codex `reasoning` and
+  `web_search_call` response items are treated as compatible ignored runtime
+  items.
+  Tests: "doctor validates a compatible Codex rollout shape" and "doctor
+  reports schema drift with score and mismatch codes".
+
 ## Prior art (cross-checked with Codex 2026-04-30)
 
 The closest neighbor we found is
@@ -172,20 +193,16 @@ adjacent projects exist in nearby spaces:
 [`cx994/ccb`](https://github.com/cx994/ccb) (orchestration UX).
 
 ## Still unresolved
-- [ ] **`harness doctor`** — schema-drift detector. Scan a session file
-      for known structural markers (e.g. session_meta.payload.id,
-      response_item content blocks of type input_text/output_text); exit
-      non-zero with a punch-list if format has drifted. Most-likely v1
-      blocker per Codex prior-art review (silent failures kill trust).
+- [ ] **Doctor preflight integration** — `harness doctor` exists, but `pipe`
+      does not yet call it before writing target session files. Decide whether
+      this should be opt-in (`--doctor`) or default-on for direct injection.
 - [ ] Long contexts: at what message count do we want to auto-summarize
       before injecting? Probably model/target-dependent.
 - [ ] System prompts: Claude Code may have implicit system prompts
       (CLAUDE.md etc.). Should we preserve them, or let the target apply
       its own?
-- [ ] Privacy: session files may contain secrets pasted into chat. Add a
-      redactor pass before injection? Opt-in or default-on?
-- [ ] Branch selection: when a Claude Code session has multiple branches
-      via `parentUuid`, which is "the" conversation? Latest leaf?
+- [ ] Privacy default: `--redact` exists and is opt-in. Should public sharing
+      flows make redaction default-on?
 - [ ] Claude Code `summary` line type — not observed in our sample; may
       appear when sessions are auto-summarized. Worth re-checking on
       longer sessions.

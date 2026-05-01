@@ -12,6 +12,11 @@ import {
   readMessages,
   sendMessage,
 } from "../dist/collab/mailbox.js";
+import {
+  diagnoseSession,
+  formatDoctorResult,
+} from "../dist/doctor/session-doctor.js";
+import { pickLatestSession } from "../dist/cli/index.js";
 import { redactText, redactContext } from "../dist/transform/redactor.js";
 
 const SAMPLE_SESSION_DIR = path.join(
@@ -180,6 +185,114 @@ test("CodexAdapter extracts a real rollout (with function_call) into NormalizedC
     "rollout had function_call lines, expected at least one tool_use block",
   );
   assert.ok(blockTypes.has("text") || blockTypes.has("tool_result"));
+});
+
+test("doctor validates a compatible Codex rollout shape", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-doctor-ok-"));
+  const filePath = path.join(
+    tempDir,
+    "rollout-2026-05-01T00-00-00-000Z-00000000-0000-0000-0000-000000000001.jsonl",
+  );
+  const lines = [
+    {
+      timestamp: "2026-05-01T00:00:00.000Z",
+      type: "session_meta",
+      payload: {
+        id: "00000000-0000-0000-0000-000000000001",
+        timestamp: "2026-05-01T00:00:00.000Z",
+        cwd: tempDir,
+        model_provider: "openai",
+        base_instructions: { text: "imported" },
+      },
+    },
+    {
+      timestamp: "2026-05-01T00:00:01.000Z",
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hello" }],
+      },
+    },
+    {
+      timestamp: "2026-05-01T00:00:02.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "shell_command",
+        arguments: "{\"command\":\"echo hi\"}",
+        call_id: "call_doctor_ok",
+      },
+    },
+    {
+      timestamp: "2026-05-01T00:00:03.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_doctor_ok",
+        output: "hi",
+      },
+    },
+  ];
+  await fs.writeFile(
+    filePath,
+    lines.map((line) => JSON.stringify(line)).join("\n") + "\n",
+    "utf8",
+  );
+
+  const result = await diagnoseSession(filePath, { from: "codex" });
+  assert.equal(result.status, "ok");
+  assert.equal(result.score, 100);
+  assert.equal(result.detectedFormat, "codex");
+  assert.match(formatDoctorResult(result), /Doctor codex: ok \(100\/100\)/);
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("doctor reports schema drift with score and mismatch codes", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "harness-doctor-bad-"));
+  const filePath = path.join(tempDir, "bad-codex.jsonl");
+  await fs.writeFile(
+    filePath,
+    JSON.stringify({
+      timestamp: "2026-05-01T00:00:00.000Z",
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: { type: "output_text", text: "not an array" },
+      },
+    }) + "\n",
+    "utf8",
+  );
+
+  const result = await diagnoseSession(filePath, { from: "codex" });
+  assert.equal(result.status, "fail");
+  assert.ok(result.score < 100);
+  assert.ok(result.findings.some((f) => f.code === "CODEX_FIRST_LINE"));
+  assert.ok(result.findings.some((f) => f.code === "CODEX_SESSION_META_MISSING"));
+  assert.ok(result.findings.some((f) => f.code === "CODEX_MESSAGE_CONTENT"));
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
+test("continue helper picks the newest source session by updatedAt", async () => {
+  const source = {
+    id: "fixture",
+    async extract() {
+      throw new Error("not used");
+    },
+    async listSessions() {
+      return [
+        { id: "older", updatedAt: "2026-05-01T01:00:00.000Z" },
+        { id: "newest", updatedAt: "2026-05-01T03:00:00.000Z" },
+        { id: "middle", updatedAt: "2026-05-01T02:00:00.000Z" },
+      ];
+    },
+  };
+
+  const latest = await pickLatestSession(source);
+  assert.equal(latest.id, "newest");
 });
 
 test("ClaudeCodeAdapter writes a session that re-extracts to the same shape", async () => {

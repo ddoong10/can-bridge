@@ -302,12 +302,15 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
     return {
       locator: filePath,
       hint:
-        `Resume in Claude Code (interactive picker by cwd):\n` +
+        `Resume in Claude Code:\n` +
         `  cd "${cwd}"\n` +
-        `  claude --resume\n` +
+        `  claude --resume ${sessionId}\n` +
         `\n` +
-        `Then choose the session whose first message is your imported one.\n` +
-        `Auto-resume by id is not exposed by current Claude Code versions.`,
+        `Or one non-interactive turn:\n` +
+        `  claude --print --resume ${sessionId} "<your prompt>"\n` +
+        `\n` +
+        `Interactive picker fallback:\n` +
+        `  claude --resume`,
       details: { sessionId, filePath, projectFolder: folder },
     };
   }

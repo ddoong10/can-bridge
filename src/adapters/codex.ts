@@ -146,22 +146,126 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
     const lines = buildCodexJsonl(context, sessionId, now);
     await fs.writeFile(filePath, lines.join("\n") + "\n", "utf8");
 
+    // Pre-register the thread row so `codex resume <id>` (TUI) finds it
+    // immediately. Without this, TUI resume looks the id up in
+    // ~/.codex/state_5.sqlite first and fails with "No saved session
+    // found"; only `codex exec resume` was bootstrapping the row before.
+    const sqliteResult = await tryRegisterCodexThread({
+      sessionId,
+      filePath,
+      context,
+    });
+
+    const sqliteNote = sqliteResult.ok
+      ? `(Pre-registered in ~/.codex/state_5.sqlite — TUI resume works immediately.)`
+      : `(Could not pre-register in sqlite: ${sqliteResult.error}.\n` +
+        `   First TUI resume may say "No saved session found"; bootstrap once with:\n` +
+        `     codex exec --skip-git-repo-check resume ${sessionId} "ping"\n` +
+        `   On Node 22.x, set NODE_OPTIONS=--experimental-sqlite to enable auto-registration.)`;
+
     return {
       locator: filePath,
       hint:
         `Resume in a real terminal (TUI):\n` +
         `  codex resume ${sessionId}\n` +
+        `${sqliteNote}\n` +
         `\n` +
         `Or run a single non-interactive turn (verified working):\n` +
         `  codex exec --skip-git-repo-check resume ${sessionId} "<your prompt>"\n` +
         `\n` +
         `If resume rejects the file (rare; format may have changed), use the prompt fallback:\n` +
-        `  harness pipe --from <src> --session <id> --to codex --as-prompt > seed.md\n` +
-        `\n` +
-        `Note: a stderr line "thread <uuid> not found" on first resume is cosmetic — see docs/OPEN_QUESTIONS.md.`,
-      details: { sessionId, filePath },
+        `  harness pipe --from <src> --session <id> --to codex --as-prompt > seed.md`,
+      details: {
+        sessionId,
+        filePath,
+        sqliteRegistered: sqliteResult.ok,
+      },
     };
   }
+}
+
+const CODEX_STATE_DB = path.join(os.homedir(), ".codex", "state_5.sqlite");
+
+async function tryRegisterCodexThread(opts: {
+  sessionId: string;
+  filePath: string;
+  context: NormalizedContext;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  // node:sqlite is built-in but requires --experimental-sqlite on Node 22.x
+  // (stable on Node 23+). If the import fails for any reason — flag missing,
+  // older Node, etc. — silently degrade: the rollout file is still written,
+  // and `codex exec resume` will bootstrap the row on first use.
+  let DatabaseSync: typeof import("node:sqlite").DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import("node:sqlite"));
+  } catch (err) {
+    return {
+      ok: false,
+      error: `node:sqlite not loadable (${err instanceof Error ? err.message : String(err)})`,
+    };
+  }
+  try {
+    await fs.access(CODEX_STATE_DB);
+  } catch {
+    return { ok: false, error: "state_5.sqlite not found (codex never run on this machine?)" };
+  }
+
+  let db: import("node:sqlite").DatabaseSync | undefined;
+  try {
+    db = new DatabaseSync(CODEX_STATE_DB);
+    const cwd = opts.context.source.cwd ?? process.cwd();
+    const firstUser = findFirstUserText(opts.context) ?? "";
+    const title = firstUser.slice(0, 200);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const nowMs = Date.now();
+
+    db.prepare(
+      `INSERT OR REPLACE INTO threads (
+        id, rollout_path, created_at, updated_at, source, model_provider,
+        cwd, title, sandbox_policy, approval_mode, tokens_used,
+        has_user_event, archived, cli_version, first_user_message,
+        memory_mode, model, created_at_ms, updated_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      opts.sessionId,
+      opts.filePath,
+      nowSec,
+      nowSec,
+      "harness-import",
+      "openai",
+      cwd,
+      title,
+      '{"type":"read-only"}',
+      "on-request",
+      0,
+      0,
+      0,
+      "0.0.1",
+      firstUser,
+      "enabled",
+      opts.context.source.model ?? null,
+      nowMs,
+      nowMs,
+    );
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    db?.close();
+  }
+}
+
+function findFirstUserText(ctx: NormalizedContext): string | null {
+  for (const m of ctx.messages) {
+    if (m.role !== "user") continue;
+    for (const b of m.content) {
+      if (b.type === "text" && b.text.length > 0) return b.text;
+    }
+  }
+  return null;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────

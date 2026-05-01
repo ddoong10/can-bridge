@@ -204,8 +204,9 @@ codex exec --skip-git-repo-check resume \
   수 있음).
 - 새 세션 메타에 `originator: "harness-import"`로 박지만 Codex는
   이걸 모르므로 sqlite `source` 컬럼에 `unknown`으로 들어감. 기능엔 영향 없음.
-- Auto-resume by id가 Claude Code엔 없어서, 사용자가 `claude --resume`
-  picker에서 직접 선택해야 함.
+- 현재 Claude Code는 `claude --resume <uuid>`와
+  `claude --print --resume <uuid> "<prompt>"`를 지원함. 구버전이면
+  `claude --resume` picker에서 직접 선택하는 fallback을 안내.
 - Cursor, ChatGPT 웹 export, Gemini는 v1+.
 - 시크릿 redactor 미구현 (세션에 토큰/패스워드 들어있으면 그대로 옮겨감).
 

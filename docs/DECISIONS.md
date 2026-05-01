@@ -62,3 +62,11 @@ Can-Bridge should lead with the narrower, defensible core: extract, normalize,
 redact, and inject coding-agent context with explicit loss boundaries. Live
 agent routing, editor sync, and MCP servers should wrap the core instead of
 replacing it.
+
+## D-0008 - Alias Sharing Starts Local And Store-Agnostic
+
+The alias/share feature should start as a local alias registry over
+`NormalizedContext`, then add pluggable stores such as encrypted Gist, hosted
+server, or IPFS. Secret Gist URLs are bearer links, not private authorization,
+so any Gist-based sharing should prefer encrypted payloads and avoid promising
+strong revocation or expiry.
