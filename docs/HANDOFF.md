@@ -7,6 +7,18 @@ entries go at the top.
 
 ### Status
 
+Added a roadmap document for the current project state and next plan.
+
+### Changed
+
+- Added `docs/ROADMAP.md`.
+- Captures completed work, positioning, near-term priorities, security/fidelity
+  follow-ups, collaboration direction, install command, and current share flow.
+
+## 2026-05-02 - Codex
+
+### Status
+
 Reviewed and tightened the Architect-approved security hardening patch before
 push.
 
