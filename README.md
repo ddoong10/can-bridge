@@ -4,6 +4,7 @@
 > context.** A small TypeScript CLI that extracts a session from one tool,
 > normalizes it, and injects it into the other — both directions.
 
+[![CI](https://github.com/ddoong10/can-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ddoong10/can-bridge/actions/workflows/ci.yml)
 [![tests](https://img.shields.io/badge/tests-39%2F39%20passing-brightgreen)](#verified-behavior)
 [![status](https://img.shields.io/badge/status-v0.2.1%20portable%20handoff-blue)](#what-works)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
