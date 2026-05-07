@@ -28,6 +28,7 @@ const IGNORED_TYPES = new Set([
     "permission-mode",
     "attachment",
     "file-history-snapshot",
+    "ai-title",
 ]);
 export class ClaudeCodeAdapter {
     id = "claude-code";
@@ -420,6 +421,15 @@ function normalizeContent(content) {
                 toolUseId: typeof b.tool_use_id === "string" ? b.tool_use_id : undefined,
                 output,
                 isError: b.is_error === true,
+            });
+        }
+        else if (t === "image") {
+            // Image attachments are not transferable across vendors and the raw
+            // base64 payload would otherwise be JSON-stringified into the next
+            // message, polluting the context. Replace with a short placeholder.
+            blocks.push({
+                type: "text",
+                text: "[image attachment dropped on cross-tool transfer]",
             });
         }
         else {
