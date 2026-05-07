@@ -45,6 +45,7 @@ const CLAUDE_TYPES = new Set([
   "last-prompt",
   "queue-operation",
   "system",
+  "ai-title",
 ]);
 
 const CODEX_WRAPPER_TYPES = new Set([
@@ -616,6 +617,10 @@ function validateClaudeContent(
           line,
         });
       }
+    } else if (type === "image") {
+      // Known Anthropic content block; the adapter projects it to a
+      // placeholder text on cross-tool transfer (raw base64 is unsafe to
+      // forward). Treat as compatible.
     } else {
       findings.push({
         level: "warn",

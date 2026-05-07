@@ -739,6 +739,118 @@ test("ClaudeCodeAdapter extract preserves linear single-chain ordering", async (
   await fs.rm(tempDir, { recursive: true, force: true });
 });
 
+test("ClaudeCodeAdapter ignores ai-title wrapper lines and image content blocks", async () => {
+  // Real Claude Code v2.1.x sessions emit `ai-title` wrapper lines (the
+  // auto-generated session title) and `image` content blocks (when the
+  // user attaches a screenshot). Both used to trigger doctor warnings and
+  // pollute the extracted transcript. They should now be handled cleanly.
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-ai-title-"));
+  const filePath = path.join(tempDir, "ai-title-test.jsonl");
+
+  const userUuid = "00000000-0000-0000-0000-000000000010";
+  const aiTitleUuid = "00000000-0000-0000-0000-000000000011";
+  const assistantUuid = "00000000-0000-0000-0000-000000000012";
+  const lines = [
+    {
+      type: "user",
+      uuid: userUuid,
+      parentUuid: null,
+      timestamp: "2026-05-01T00:00:00.000Z",
+      sessionId: "ai-title-test",
+      cwd: tempDir,
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "What is in this image?" },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=",
+            },
+          },
+        ],
+      },
+    },
+    {
+      type: "ai-title",
+      uuid: aiTitleUuid,
+      parentUuid: userUuid,
+      timestamp: "2026-05-01T00:00:00.500Z",
+      sessionId: "ai-title-test",
+      cwd: tempDir,
+      title: "Image inspection",
+    },
+    {
+      type: "assistant",
+      uuid: assistantUuid,
+      parentUuid: userUuid,
+      timestamp: "2026-05-01T00:00:01.000Z",
+      sessionId: "ai-title-test",
+      cwd: tempDir,
+      message: {
+        id: "msg_after_title",
+        role: "assistant",
+        model: "claude-test",
+        content: [{ type: "text", text: "It's a 1x1 pixel." }],
+      },
+    },
+  ];
+  await fs.writeFile(
+    filePath,
+    lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+    "utf8",
+  );
+
+  const adapter = new ClaudeCodeAdapter();
+  const ctx = await adapter.extract(filePath);
+
+  // ai-title is dropped entirely (not surfaced as a message).
+  assert.equal(ctx.messages.length, 2, "user + assistant only — ai-title dropped");
+  assert.equal(ctx.messages[0].role, "user");
+  assert.equal(ctx.messages[1].role, "assistant");
+
+  // The image block becomes a short placeholder, NOT JSON-stringified
+  // base64. The user's text question survives next to it.
+  const userBlocks = ctx.messages[0].content;
+  const texts = userBlocks
+    .filter((b) => b.type === "text")
+    .map((b) => b.text);
+  assert.ok(
+    texts.includes("What is in this image?"),
+    "user text question must survive",
+  );
+  assert.ok(
+    texts.some((t) => t.includes("[image attachment dropped")),
+    "image block must be replaced by a short placeholder",
+  );
+  for (const b of userBlocks) {
+    if (b.type === "text") {
+      assert.ok(
+        !b.text.includes("iVBORw0K"),
+        "raw base64 must not leak into the extracted text",
+      );
+    }
+  }
+
+  // Doctor should now treat both ai-title and image as known compatible
+  // markers — the score must be a clean 100.
+  const doctor = await diagnoseSession(filePath, { from: "claude-code" });
+  assert.equal(doctor.status, "ok");
+  assert.equal(doctor.score, 100);
+  assert.ok(
+    !doctor.findings.some((f) => f.code === "CLAUDE_UNKNOWN_TYPE"),
+    "ai-title must not trigger CLAUDE_UNKNOWN_TYPE",
+  );
+  assert.ok(
+    !doctor.findings.some((f) => f.code === "CLAUDE_UNKNOWN_BLOCK"),
+    "image must not trigger CLAUDE_UNKNOWN_BLOCK",
+  );
+
+  await fs.rm(tempDir, { recursive: true, force: true });
+});
+
 test("mailbox stores agent messages and filters inbox/thread views", async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-mailbox-"));
   const mailbox = path.join(temp, ".agent-chat", "messages.jsonl");
