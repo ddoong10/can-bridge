@@ -40,7 +40,9 @@ normalizing, and handing off coding-agent conversations across tools.
   `.agent-chat/messages.jsonl` and ignored by git.
 - A behavior-based evaluation MVP now exists through `can-bridge eval run` and
   `can-bridge eval score`; it records run artifacts under `runs/` and scores
-  against JSON eval cases in `tests/evals/fixtures/`.
+  against JSON eval cases in `tests/evals/fixtures/`. The default final score
+  excludes token efficiency so Converted vs No Context comparisons focus on
+  behavior; token efficiency remains a reported diagnostic.
 - `docs/RELATED_PROJECTS.md` tracks adjacent GitHub projects and positions
   this repo as a context interchange core, not primarily a live bridge.
 - `docs/ALIAS_SHARE_SPEC.md` drafts the short alias + friend sharing design.

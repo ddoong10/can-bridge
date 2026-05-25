@@ -43,7 +43,7 @@ can-bridge eval run `
 
 ## Scoring
 
-The score is:
+The default behavior score is:
 
 ```text
 Context Retention Score =
@@ -51,10 +51,13 @@ Context Retention Score =
 + 0.30 * Behavioral Adherence
 + 0.25 * Task Success
 + 0.10 * Conflict Avoidance
-+ 0.10 * Token Efficiency
 ```
 
-The case file may override weights.
+Token efficiency is still reported, but it is not included in the default final
+score. Otherwise Converted can look worse than No Context simply because it
+received more context, even when behavior is identical. A case can explicitly
+set `score.tokenEfficiency` when the experiment is about compression or context
+budgeting.
 
 The deterministic scorer checks:
 

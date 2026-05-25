@@ -48,7 +48,7 @@ function scoreArtifacts(input) {
     const expected = input.testCase.expected ?? {};
     const commandText = input.commands.map((c) => c.cmd.join(" ")).join("\n");
     const mustModifyScores = expected.mustModify?.map((file) => {
-        const ok = input.changedFiles.has(normalizePath(file));
+        const ok = hasChangedPath(input.changedFiles, file);
         checks.push({
             id: `mustModify:${file}`,
             ok,
@@ -58,7 +58,7 @@ function scoreArtifacts(input) {
         return ok ? 100 : 0;
     }) ?? [];
     const mustNotModifyScores = expected.mustNotModify?.map((file) => {
-        const ok = !input.changedFiles.has(normalizePath(file));
+        const ok = !hasChangedPath(input.changedFiles, file);
         checks.push({
             id: `mustNotModify:${file}`,
             ok,
@@ -205,6 +205,15 @@ function parseChangedFiles(diff) {
 }
 function normalizePath(value) {
     return value.replace(/\\/g, "/").replace(/^\.?\//, "");
+}
+function hasChangedPath(changedFiles, expectedPath) {
+    const normalized = normalizePath(expectedPath);
+    for (const changed of changedFiles) {
+        if (changed === normalized || changed.startsWith(normalized + "/")) {
+            return true;
+        }
+    }
+    return false;
 }
 async function readCondition(runDir) {
     const stats = await readStats(path.join(runDir, "context-stats.json"));

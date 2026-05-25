@@ -283,6 +283,9 @@ can-bridge eval run \
 `context-stats.json`, and `score.json` under `runs/`. See
 [docs/EVALUATION.md](docs/EVALUATION.md).
 
+Token efficiency is reported separately by default so Converted vs No Context
+comparisons focus on behavior first.
+
 ## Related work
 
 This space already has live Claude/Codex bridges, MCP wrappers, editor sync

@@ -7,6 +7,31 @@ entries go at the top.
 
 ### Status
 
+Adjusted the eval scoring model after the first live smoke comparison showed
+Converted scoring below No Context solely because of token-efficiency penalty.
+
+### Changed
+
+- Default eval final score now excludes token efficiency; it remains reported
+  as a diagnostic.
+- Updated docs to explain that token efficiency is opt-in for compression
+  experiments.
+- Added `can-bridge-session-gotcha.json`, a stronger fixture designed to catch
+  JSON-vs-YAML and no-runtime-dependency context loss.
+
+### Verification
+
+- `npm.cmd run build`: passed.
+- Re-scored the live No Context smoke run with the updated default weights:
+  final score changed from 77.5 to 75.0.
+- Re-scored the live Converted smoke run with the updated default weights:
+  final score changed from 67.5 to 75.0. Token efficiency still reports 0.0,
+  but it no longer lowers the default behavior score.
+
+## 2026-05-25 - Codex
+
+### Status
+
 Added the first fully automatic behavior-evaluation MVP.
 
 ### Changed

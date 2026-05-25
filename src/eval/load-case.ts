@@ -7,7 +7,10 @@ export const DEFAULT_SCORE_WEIGHTS: EvalScoreWeights = {
   behavioralAdherence: 30,
   taskSuccess: 25,
   conflictAvoidance: 10,
-  tokenEfficiency: 10,
+  // Token efficiency is reported as a diagnostic by default, but it should not
+  // dominate Original/Converted/No Context behavior comparisons. Individual
+  // cases can opt it into the final score when comparing compression strategies.
+  tokenEfficiency: 0,
 };
 
 export async function loadEvalCase(filePath: string): Promise<EvalCase> {

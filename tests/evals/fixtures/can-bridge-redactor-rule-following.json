@@ -48,7 +48,7 @@
     "behavioralAdherence": 30,
     "taskSuccess": 25,
     "conflictAvoidance": 10,
-    "tokenEfficiency": 10
+    "tokenEfficiency": 0
   }
 }
 

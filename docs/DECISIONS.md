@@ -78,3 +78,8 @@ behaves as if it had the original context, not by textual similarity alone. The
 default evaluator should first use deterministic artifacts (`diff.patch`,
 `commands.jsonl`, transcripts, and context stats); LLM judging can be optional
 later, not required for the baseline.
+
+Token efficiency is reported by default but not included in the default final
+behavior score. Otherwise Converted can be penalized against No Context purely
+for carrying context, even when behavior is identical. Cases that specifically
+measure compression can opt token efficiency back into the final score.

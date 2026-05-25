@@ -75,7 +75,7 @@ function scoreArtifacts(input: {
 
   const mustModifyScores =
     expected.mustModify?.map((file) => {
-      const ok = input.changedFiles.has(normalizePath(file));
+      const ok = hasChangedPath(input.changedFiles, file);
       checks.push({
         id: `mustModify:${file}`,
         ok,
@@ -87,7 +87,7 @@ function scoreArtifacts(input: {
 
   const mustNotModifyScores =
     expected.mustNotModify?.map((file) => {
-      const ok = !input.changedFiles.has(normalizePath(file));
+      const ok = !hasChangedPath(input.changedFiles, file);
       checks.push({
         id: `mustNotModify:${file}`,
         ok,
@@ -254,6 +254,16 @@ function parseChangedFiles(diff: string): Set<string> {
 
 function normalizePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\.?\//, "");
+}
+
+function hasChangedPath(changedFiles: Set<string>, expectedPath: string): boolean {
+  const normalized = normalizePath(expectedPath);
+  for (const changed of changedFiles) {
+    if (changed === normalized || changed.startsWith(normalized + "/")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function readCondition(runDir: string): Promise<EvalCondition> {

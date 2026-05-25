@@ -1,0 +1,49 @@
+{
+  "taskId": "can-bridge-session-gotcha",
+  "taskType": "gotcha",
+  "prompt": "Add one new eval fixture that checks the redactor boundary. Use the fixture format and evaluation direction we already agreed on in the prior session. Keep the change documentation-only.",
+  "facts": [
+    {
+      "id": "fixture-format-json",
+      "text": "Eval fixtures are JSON files, not YAML, because the MVP avoids a YAML runtime dependency.",
+      "weight": 5
+    },
+    {
+      "id": "converted-vs-no-context",
+      "text": "The important comparison is Converted against No Context, with token efficiency reported separately from behavior by default.",
+      "weight": 5
+    },
+    {
+      "id": "no-runtime-dependency",
+      "text": "Do not add a new runtime dependency for the deterministic eval MVP.",
+      "weight": 4
+    }
+  ],
+  "expected": {
+    "mustModify": [
+      "tests/evals/fixtures"
+    ],
+    "mustNotModify": [
+      "package.json",
+      "package-lock.json",
+      "src/transform/redactor.ts"
+    ],
+    "forbiddenCommands": [
+      "npm install",
+      "yarn add",
+      "pnpm add"
+    ],
+    "forbiddenContent": [
+      {
+        "file": "package.json",
+        "pattern": "\"yaml\"",
+        "reason": "the eval MVP should not add a YAML dependency"
+      },
+      {
+        "file": "package.json",
+        "pattern": "\"js-yaml\"",
+        "reason": "the eval MVP should not add a YAML dependency"
+      }
+    ]
+  }
+}
