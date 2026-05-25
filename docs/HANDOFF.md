@@ -3,6 +3,46 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-05-25 - Codex
+
+### Status
+
+Added the first fully automatic behavior-evaluation MVP.
+
+### Changed
+
+- Added `src/eval/` with case loading, automatic run capture, and deterministic
+  scoring.
+- Added `can-bridge eval run` to execute Codex or Claude Code non-interactively,
+  optionally converting a source session into the target first.
+- Added `can-bridge eval score` to score existing run artifacts.
+- Added evaluation docs and sample JSON cases under `tests/evals/fixtures/`.
+- Ignored generated `runs/` artifacts in git.
+- Recorded D-0009: evaluate context transfer by agent behavior.
+
+### Notes
+
+- Eval cases are JSON for now to avoid adding a YAML dependency.
+- `eval run --condition converted --source <tool> --source-session <id|latest>
+  --agent <target>` performs source extraction, target injection, agent run,
+  artifact capture, and scoring.
+- Default agent commands are `codex exec --skip-git-repo-check ...` and
+  `claude --print ...`; custom commands can use `{{prompt}}` and
+  `{{sessionId}}`.
+
+### Verification
+
+- `npm.cmd run build`: passed.
+- `node dist\cli\index.js eval help`: prints the new eval help.
+- `node dist\cli\index.js eval run --case tests\evals\fixtures\can-bridge-continuation.json --condition no-context --agent codex --out runs\eval-smoke --command "node --version"`:
+  created run artifacts and `score.json`.
+- `node dist\cli\index.js eval score --case tests\evals\fixtures\can-bridge-continuation.json --run runs\eval-smoke`:
+  scored the smoke run.
+- `npm.cmd test`: build passed, then 25/39 tests passed and 14 failed because
+  the sandbox blocks writes to `C:\Users\sg682\.claude` and
+  `C:\Users\sg682\.codex`. The failures are the existing inject-style tests
+  that write real agent session files.
+
 ## 2026-05-02 - Codex
 
 ### Status

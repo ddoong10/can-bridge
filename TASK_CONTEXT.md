@@ -38,6 +38,9 @@ normalizing, and handing off coding-agent conversations across tools.
   `TASK_CONTEXT.md`, `docs/HANDOFF.md`, `docs/DECISIONS.md`.
 - A local agent mailbox exists through `can-bridge mailbox`, backed by
   `.agent-chat/messages.jsonl` and ignored by git.
+- A behavior-based evaluation MVP now exists through `can-bridge eval run` and
+  `can-bridge eval score`; it records run artifacts under `runs/` and scores
+  against JSON eval cases in `tests/evals/fixtures/`.
 - `docs/RELATED_PROJECTS.md` tracks adjacent GitHub projects and positions
   this repo as a context interchange core, not primarily a live bridge.
 - `docs/ALIAS_SHARE_SPEC.md` drafts the short alias + friend sharing design.
@@ -100,3 +103,5 @@ Code and resumed successfully.
    each agent's CLI automatically.
 10. Re-scan related projects before public release, especially live
     Claude/Codex bridges and MCP wrappers.
+11. Expand eval reporting across Original / Converted / No Context runs and
+    add optional semantic judging after deterministic scoring stabilizes.

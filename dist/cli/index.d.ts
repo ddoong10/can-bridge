@@ -10,6 +10,7 @@
  *   can-bridge continue --from claude-code --to codex --latest
  *   can-bridge doctor --from codex --session <id|path> [--json]
  *   can-bridge list   --from claude-code
+ *   can-bridge eval run --case <case.json> --agent <codex|claude-code>
  */
 import type { SessionSummary, SourceAdapter } from "../adapters/base.js";
 export declare function pickLatestSession(source: SourceAdapter): Promise<SessionSummary>;

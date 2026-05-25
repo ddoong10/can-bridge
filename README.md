@@ -266,6 +266,23 @@ can-bridge mailbox thread --thread <thread-id>
 Use `docs/HANDOFF.md` for durable handoffs. Use the mailbox for live,
 short-lived agent conversation.
 
+## Evaluation
+
+can-bridge evaluates context preservation by behavior, not text similarity
+alone: the target coding agent should behave as if it had the original context.
+
+```bash
+can-bridge eval run \
+  --case tests/evals/fixtures/can-bridge-redactor-rule-following.json \
+  --condition converted \
+  --source codex --source-session latest \
+  --agent claude-code
+```
+
+`eval run` records `transcript.txt`, `commands.jsonl`, `diff.patch`,
+`context-stats.json`, and `score.json` under `runs/`. See
+[docs/EVALUATION.md](docs/EVALUATION.md).
+
 ## Related work
 
 This space already has live Claude/Codex bridges, MCP wrappers, editor sync

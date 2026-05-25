@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 .agent-chat/
 .omc/
+runs/
 
 # Real session files used as fixtures should be anonymized first.
 tests/fixtures/*.real.jsonl
