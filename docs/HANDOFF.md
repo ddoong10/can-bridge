@@ -7,6 +7,25 @@ entries go at the top.
 
 ### Status
 
+Fixed `eval run` hanging at the agent step when Codex printed
+`Reading additional input from stdin...`.
+
+### Changed
+
+- Child processes spawned by `eval run` now use
+  `stdio: ["ignore", "pipe", "pipe"]`.
+- This closes stdin for non-interactive agent commands while still streaming
+  stdout/stderr to run artifacts.
+
+### Verification
+
+- `npm.cmd run build`: passed.
+- `eval run --command "node --version"` completed with `Valid: yes`.
+
+## 2026-05-25 - Codex
+
+### Status
+
 Added visible progress artifacts for long `can-bridge eval run` executions.
 
 ### Changed

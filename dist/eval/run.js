@@ -247,6 +247,10 @@ async function runCommand(cmd, cwd, runDir, opts) {
         const child = spawn(spawnCmd.file, spawnCmd.args, {
             cwd,
             windowsHide: true,
+            // Codex CLI reads additional prompt input from stdin when it is left open.
+            // Eval prompts are passed as argv, so close stdin to make non-interactive
+            // runs terminate instead of waiting at "Reading additional input from stdin...".
+            stdio: ["ignore", "pipe", "pipe"],
         });
         const stdoutChunks = [];
         const stderrChunks = [];
