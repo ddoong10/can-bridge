@@ -1,0 +1,54 @@
+{
+  "taskId": "can-bridge-redactor-rule-following",
+  "taskType": "rule_following",
+  "prompt": "Add support for redacting one new high-confidence token pattern. Preserve the transform boundary and add a focused regression test. Do not modify the normalized context schema.",
+  "facts": [
+    {
+      "id": "required-context",
+      "text": "Before changing files, read TASK_CONTEXT.md, docs/HANDOFF.md, and docs/DECISIONS.md.",
+      "weight": 5
+    },
+    {
+      "id": "transform-no-io",
+      "text": "Keep schema and transform logic free of filesystem I/O.",
+      "weight": 5
+    },
+    {
+      "id": "verification",
+      "text": "Run npm run build and npm test after changes.",
+      "weight": 4
+    }
+  ],
+  "expected": {
+    "mustModify": [
+      "src/transform/redactor.ts",
+      "tests/smoke.test.mjs"
+    ],
+    "mustNotModify": [
+      "src/schema/context.ts"
+    ],
+    "mustRunOneOf": [
+      "npm test",
+      "npm.cmd test"
+    ],
+    "forbiddenCommands": [
+      "npm install",
+      "yarn"
+    ],
+    "forbiddenContent": [
+      {
+        "file": "src/transform/redactor.ts",
+        "pattern": "node:fs",
+        "reason": "transform layer must not use filesystem I/O"
+      }
+    ]
+  },
+  "score": {
+    "criticalFactRecall": 25,
+    "behavioralAdherence": 30,
+    "taskSuccess": 25,
+    "conflictAvoidance": 10,
+    "tokenEfficiency": 10
+  }
+}
+

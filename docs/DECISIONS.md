@@ -70,3 +70,11 @@ The alias/share feature should start as a local alias registry over
 server, or IPFS. Secret Gist URLs are bearer links, not private authorization,
 so any Gist-based sharing should prefer encrypted payloads and avoid promising
 strong revocation or expiry.
+
+## D-0009 - Evaluate Context Transfer By Agent Behavior
+
+can-bridge should measure conversion quality by whether the target coding agent
+behaves as if it had the original context, not by textual similarity alone. The
+default evaluator should first use deterministic artifacts (`diff.patch`,
+`commands.jsonl`, transcripts, and context stats); LLM judging can be optional
+later, not required for the baseline.

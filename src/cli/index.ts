@@ -10,6 +10,7 @@
  *   can-bridge continue --from claude-code --to codex --latest
  *   can-bridge doctor --from codex --session <id|path> [--json]
  *   can-bridge list   --from claude-code
+ *   can-bridge eval run --case <case.json> --agent <codex|claude-code>
  */
 
 import { promises as fs } from "node:fs";
@@ -48,6 +49,9 @@ import {
   importPackage,
 } from "../share/import.js";
 import { UNTRUSTED_FENCE_HEADER } from "../transform/fence.js";
+import { runEvalCase } from "../eval/run.js";
+import { formatEvalScore, scoreEvalRun } from "../eval/score.js";
+import type { EvalAgent, EvalCondition } from "../eval/types.js";
 
 const SOURCES: Record<string, () => SourceAdapter> = {
   "claude-code": () => new ClaudeCodeAdapter(),
@@ -278,6 +282,10 @@ async function main() {
       await runMailbox(rest);
       break;
     }
+    case "eval": {
+      await runEval(rest);
+      break;
+    }
     case undefined:
     case "help":
     case "--help":
@@ -341,6 +349,58 @@ async function runContinue(args: Record<string, string | boolean>) {
 
   const result = await target.inject(ctx);
   printContinueResult(to, result);
+}
+
+async function runEval(argv: string[]) {
+  const [action, ...rest] = argv;
+  const args = parseArgs(rest);
+
+  switch (action) {
+    case "run": {
+      const result = await runEvalCase({
+        casePath: requireArg(args, "case"),
+        condition: parseEvalCondition(
+          typeof args.condition === "string" ? args.condition : "converted",
+        ),
+        agent: parseEvalAgent(requireArg(args, "agent")),
+        cwd: typeof args.cwd === "string" ? args.cwd : undefined,
+        outDir: typeof args.out === "string" ? args.out : undefined,
+        source:
+          args.source === "codex" || args.source === "claude-code"
+            ? args.source
+            : undefined,
+        sourceSession:
+          typeof args["source-session"] === "string"
+            ? args["source-session"]
+            : undefined,
+        command: typeof args.command === "string" ? args.command : undefined,
+        noScore: args["no-score"] === true,
+      });
+      console.error(`Eval run: ${result.runDir}`);
+      if (result.scorePath) console.error(`Score: ${result.scorePath}`);
+      break;
+    }
+    case "score": {
+      const score = await scoreEvalRun(
+        requireArg(args, "case"),
+        requireArg(args, "run"),
+      );
+      if (args.json) {
+        process.stdout.write(JSON.stringify(score, null, 2) + "\n");
+      } else {
+        process.stdout.write(formatEvalScore(score));
+      }
+      break;
+    }
+    case undefined:
+    case "help":
+    case "--help":
+    case "-h":
+      printEvalHelp();
+      break;
+    default:
+      throw new Error(`Unknown eval command: ${action}`);
+  }
 }
 
 export async function pickLatestSession(
@@ -638,6 +698,7 @@ Commands:
   share  --from <source> (--session <id> | --latest) [--redact] [--include-repo-ref]
                          [--include-patch] [--out file.cbctx | --store stdout]
   mailbox <send|inbox|thread|all>
+  eval   <run|score>
 
 Flags:
   --redact   Mask common API keys (sk-, sk-ant-, gh*_, AKIA, AIza, xox*-),
@@ -646,6 +707,44 @@ Flags:
 
 Sources: ${Object.keys(SOURCES).join(", ")}
 Targets: ${Object.keys(TARGETS).join(", ")}
+`);
+}
+
+function parseEvalCondition(value: string): EvalCondition {
+  if (
+    value === "original" ||
+    value === "converted" ||
+    value === "no-context" ||
+    value === "human-target"
+  ) {
+    return value;
+  }
+  throw new Error(
+    `Unknown eval condition "${value}". Use original, converted, no-context, or human-target.`,
+  );
+}
+
+function parseEvalAgent(value: string): EvalAgent {
+  if (value === "codex" || value === "claude-code") return value;
+  throw new Error(`Unknown eval agent "${value}". Use codex or claude-code.`);
+}
+
+function printEvalHelp() {
+  process.stderr.write(`can-bridge eval ??run and score behavior-based context evaluations
+
+Commands:
+  eval run --case <case.json> --agent <codex|claude-code> [--condition converted]
+           [--source <codex|claude-code> --source-session <id|latest>]
+           [--cwd <repo>] [--out <run-dir>] [--command <template>] [--no-score]
+
+  eval score --case <case.json> --run <run-dir> [--json]
+
+Default agent commands:
+  codex:       codex exec --skip-git-repo-check [resume <session>] <prompt>
+  claude-code: claude --print [--resume <session>] <prompt>
+
+For custom commands:
+  --command "my-agent --session {{sessionId}} {{prompt}}"
 `);
 }
 

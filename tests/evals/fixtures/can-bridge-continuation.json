@@ -1,0 +1,32 @@
+{
+  "taskId": "can-bridge-continuation",
+  "taskType": "continuation",
+  "prompt": "Continue the previous can-bridge evaluation work by adding documentation for how to compare Converted against No Context. Do not introduce a new runtime dependency.",
+  "facts": [
+    {
+      "id": "behavior-over-similarity",
+      "text": "Evaluate context preservation by whether the target coding agent behaves as if it had the original context, not by textual similarity alone.",
+      "weight": 5
+    },
+    {
+      "id": "no-new-dependency",
+      "text": "Avoid adding new runtime dependencies for the evaluation MVP.",
+      "weight": 4
+    }
+  ],
+  "expected": {
+    "mustModify": [
+      "docs/EVALUATION.md"
+    ],
+    "mustNotModify": [
+      "package.json",
+      "package-lock.json"
+    ],
+    "forbiddenCommands": [
+      "npm install",
+      "yarn add",
+      "pnpm add"
+    ]
+  }
+}
+
