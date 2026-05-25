@@ -186,48 +186,22 @@ function defaultAgentCommand(
   resumeSessionId: string | undefined,
 ): string[] {
   if (agent === "codex") {
-    if (process.platform === "win32") {
-      const promptArg = powershellSingleQuoted(prompt);
-      const script = resumeSessionId
-        ? `& codex.cmd exec --skip-git-repo-check resume ${powershellSingleQuoted(resumeSessionId)} ${promptArg}`
-        : `& codex.cmd exec --skip-git-repo-check ${promptArg}`;
-      return [
-        "powershell.exe",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        script,
-      ];
-    }
+    const executable = process.platform === "win32" ? "codex.cmd" : "codex";
     return resumeSessionId
       ? [
-          "codex",
+          executable,
           "exec",
           "--skip-git-repo-check",
           "resume",
           resumeSessionId,
           prompt,
         ]
-      : ["codex", "exec", "--skip-git-repo-check", prompt];
+      : [executable, "exec", "--skip-git-repo-check", prompt];
   }
-  if (process.platform === "win32") {
-    const promptArg = powershellSingleQuoted(prompt);
-    const script = resumeSessionId
-      ? `& claude.cmd --print --resume ${powershellSingleQuoted(resumeSessionId)} ${promptArg}`
-      : `& claude.cmd --print ${promptArg}`;
-    return [
-      "powershell.exe",
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      script,
-    ];
-  }
+  const executable = process.platform === "win32" ? "claude.cmd" : "claude";
   return resumeSessionId
-    ? ["claude", "--print", "--resume", resumeSessionId, prompt]
-    : ["claude", "--print", prompt];
+    ? [executable, "--print", "--resume", resumeSessionId, prompt]
+    : [executable, "--print", prompt];
 }
 
 export function commandFromTemplate(
@@ -388,10 +362,6 @@ function quoteWindowsCmdArg(arg: string): string {
   if (arg.length === 0) return '""';
   if (!/[()\s"%!^&|<>]/.test(arg)) return arg;
   return `"${arg.replace(/(["^&|<>])/g, "^$1").replace(/%/g, "%%")}"`;
-}
-
-function powershellSingleQuoted(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function pickSource(id: "codex" | "claude-code"): SourceAdapter {
