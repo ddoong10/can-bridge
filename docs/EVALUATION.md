@@ -13,7 +13,7 @@ eval case JSON
   -> can-bridge eval run
   -> optional source session extraction and target injection
   -> target agent runs non-interactively
-  -> diff.patch, commands.jsonl, transcript.txt, context-stats.json
+  -> diff.patch, commands.jsonl, transcript.txt, context-stats.json, status.json
   -> deterministic score
 ```
 
@@ -31,6 +31,16 @@ can-bridge eval run `
 That command extracts the source session, injects it into the target agent,
 runs the target agent with the case prompt, records artifacts under `runs/`,
 and writes `score.json`.
+
+`eval run` writes `status.json` as soon as the run starts and streams command
+stdout/stderr to files named `*.agent.stdout.txt`, `*.agent.stderr.txt`,
+`*.git-diff.stdout.txt`, and `*.git-diff.stderr.txt`. During a long run, inspect
+progress with:
+
+```powershell
+Get-Content <run-dir>\status.json
+Get-Content <run-dir>\*.agent.stderr.txt -Wait
+```
 
 For no-context or original-context baselines:
 

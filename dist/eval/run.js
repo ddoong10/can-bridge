@@ -13,13 +13,36 @@ export async function runEvalCase(opts) {
     await fs.mkdir(runDir, { recursive: true });
     const commandsPath = path.join(runDir, "commands.jsonl");
     const transcriptPath = path.join(runDir, "transcript.txt");
+    const statusPath = path.join(runDir, "status.json");
     const stats = {
         condition: opts.condition,
         agent: opts.agent,
         promptBytes: Buffer.byteLength(testCase.prompt, "utf8"),
     };
+    await writeStatus(statusPath, {
+        phase: "loaded-case",
+        runDir,
+        caseId: testCase.taskId,
+        condition: opts.condition,
+        agent: opts.agent,
+        startedAt: new Date().toISOString(),
+    });
+    await appendFile(transcriptPath, `[can-bridge eval] loaded case ${testCase.taskId}\n`);
+    console.error(`Eval run: ${runDir}`);
+    console.error(`[1/5] Loaded case ${testCase.taskId}`);
     let resumeSessionId;
     if (opts.condition === "converted" && opts.source && opts.sourceSession) {
+        console.error(`[2/5] Converting ${opts.source}:${opts.sourceSession} -> ${opts.agent}`);
+        await writeStatus(statusPath, {
+            phase: "converting-context",
+            runDir,
+            caseId: testCase.taskId,
+            condition: opts.condition,
+            agent: opts.agent,
+            source: opts.source,
+            sourceSession: opts.sourceSession,
+            updatedAt: new Date().toISOString(),
+        });
         const source = pickSource(opts.source);
         const target = pickTarget(opts.agent);
         const locator = opts.sourceSession === "latest"
@@ -44,22 +67,69 @@ export async function runEvalCase(opts) {
         };
         await appendFile(transcriptPath, `[can-bridge eval] converted ${source.id}:${locator} -> ${target.id}:${resumeSessionId ?? result.locator}\n\n`);
     }
+    else {
+        console.error("[2/5] No context conversion for this condition");
+    }
     const cmd = opts.command
         ? commandFromTemplate(opts.command, testCase.prompt, resumeSessionId)
         : defaultAgentCommand(opts.agent, testCase.prompt, resumeSessionId);
-    const run = await runCommand(cmd, cwd, runDir);
+    console.error(`[3/5] Starting agent command: ${formatCommandForLog(cmd)}`);
+    const run = await runCommand(cmd, cwd, runDir, {
+        label: "agent",
+        commandsPath,
+        statusPath,
+        statusBase: {
+            runDir,
+            caseId: testCase.taskId,
+            condition: opts.condition,
+            agent: opts.agent,
+        },
+    });
     await appendJsonl(commandsPath, run.record);
     await appendFile(transcriptPath, `# Command\n${cmd.join(" ")}\n\n`);
     await appendFile(transcriptPath, `# stdout\n${run.stdout}\n\n# stderr\n${run.stderr}\n`);
-    const diff = await runCommand(["git", "diff", "--binary"], cwd, runDir);
+    console.error(`[3/5] Agent exited ${String(run.record.exitCode)}`);
+    console.error("[4/5] Capturing git diff");
+    const diff = await runCommand(["git", "diff", "--binary"], cwd, runDir, {
+        label: "git-diff",
+        commandsPath,
+        statusPath,
+        statusBase: {
+            runDir,
+            caseId: testCase.taskId,
+            condition: opts.condition,
+            agent: opts.agent,
+        },
+    });
     await appendJsonl(commandsPath, diff.record);
     await fs.writeFile(path.join(runDir, "diff.patch"), diff.stdout, "utf8");
     await fs.writeFile(path.join(runDir, "context-stats.json"), JSON.stringify(stats, null, 2) + "\n", "utf8");
     if (opts.noScore)
         return { runDir };
+    console.error("[5/5] Scoring run");
+    await writeStatus(statusPath, {
+        phase: "scoring",
+        runDir,
+        caseId: testCase.taskId,
+        condition: opts.condition,
+        agent: opts.agent,
+        updatedAt: new Date().toISOString(),
+    });
     const score = await scoreEvalRun(opts.casePath, runDir);
     const scorePath = path.join(runDir, "score.json");
     await fs.writeFile(scorePath, JSON.stringify(score, null, 2) + "\n", "utf8");
+    await writeStatus(statusPath, {
+        phase: "complete",
+        runDir,
+        caseId: testCase.taskId,
+        condition: opts.condition,
+        agent: opts.agent,
+        scorePath,
+        valid: score.valid,
+        finalScore: score.scores.final,
+        finishedAt: new Date().toISOString(),
+    });
+    console.error(`[5/5] Score ${score.scores.final.toFixed(1)} (${score.valid ? "valid" : "invalid"})`);
     return { runDir, scorePath };
 }
 function defaultAgentCommand(agent, prompt, resumeSessionId) {
@@ -147,10 +217,31 @@ function splitCommand(command) {
         out.push(cur);
     return out;
 }
-async function runCommand(cmd, cwd, runDir) {
+async function runCommand(cmd, cwd, runDir, opts) {
     const startedAt = new Date().toISOString();
-    const stdoutFile = path.join(runDir, `${startedAt.replace(/[:.]/g, "-")}.stdout.txt`);
-    const stderrFile = path.join(runDir, `${startedAt.replace(/[:.]/g, "-")}.stderr.txt`);
+    const safeStart = startedAt.replace(/[:.]/g, "-");
+    const stdoutFile = path.join(runDir, `${safeStart}.${opts.label}.stdout.txt`);
+    const stderrFile = path.join(runDir, `${safeStart}.${opts.label}.stderr.txt`);
+    const stdoutHandle = await fs.open(stdoutFile, "w");
+    const stderrHandle = await fs.open(stderrFile, "w");
+    const startedRecord = {
+        cmd,
+        cwd,
+        startedAt,
+        finishedAt: "",
+        exitCode: null,
+        stdoutFile: path.basename(stdoutFile),
+        stderrFile: path.basename(stderrFile),
+    };
+    await appendJsonl(opts.commandsPath, { ...startedRecord, status: "started" });
+    await writeStatus(opts.statusPath, {
+        ...opts.statusBase,
+        phase: `${opts.label}-running`,
+        currentCommand: cmd,
+        stdoutFile: path.basename(stdoutFile),
+        stderrFile: path.basename(stderrFile),
+        updatedAt: startedAt,
+    });
     const result = await new Promise((resolve) => {
         const spawnCmd = prepareSpawnCommand(cmd);
         const child = spawn(spawnCmd.file, spawnCmd.args, {
@@ -159,8 +250,14 @@ async function runCommand(cmd, cwd, runDir) {
         });
         const stdoutChunks = [];
         const stderrChunks = [];
-        child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
-        child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+        child.stdout.on("data", (chunk) => {
+            stdoutChunks.push(chunk);
+            void stdoutHandle.write(chunk);
+        });
+        child.stderr.on("data", (chunk) => {
+            stderrChunks.push(chunk);
+            void stderrHandle.write(chunk);
+        });
         child.on("close", (code) => {
             resolve({
                 exitCode: code,
@@ -176,8 +273,8 @@ async function runCommand(cmd, cwd, runDir) {
             });
         });
     });
-    await fs.writeFile(stdoutFile, result.stdout, "utf8");
-    await fs.writeFile(stderrFile, result.stderr, "utf8");
+    await stdoutHandle.close();
+    await stderrHandle.close();
     return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -191,6 +288,11 @@ async function runCommand(cmd, cwd, runDir) {
             stderrFile: path.basename(stderrFile),
         },
     };
+}
+function formatCommandForLog(cmd) {
+    return cmd
+        .map((arg) => (/\s/.test(arg) ? JSON.stringify(arg) : arg))
+        .join(" ");
 }
 function prepareSpawnCommand(cmd) {
     const file = cmd[0];
@@ -243,6 +345,9 @@ async function appendJsonl(filePath, value) {
 }
 async function appendFile(filePath, value) {
     await fs.appendFile(filePath, value, "utf8");
+}
+async function writeStatus(filePath, value) {
+    await fs.writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 function today() {
     return new Date().toISOString().slice(0, 10);

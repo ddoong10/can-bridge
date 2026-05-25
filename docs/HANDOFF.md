@@ -7,6 +7,30 @@ entries go at the top.
 
 ### Status
 
+Added visible progress artifacts for long `can-bridge eval run` executions.
+
+### Changed
+
+- `eval run` now creates `status.json` immediately after loading the case.
+- Agent and git-diff stdout/stderr stream to files while commands run instead
+  of being written only after process exit.
+- `commands.jsonl` now records a `status:"started"` entry before each command
+  plus the finished command record after exit.
+- Console output now shows coarse `[1/5]` through `[5/5]` progress.
+- Scoring ignores `commands.jsonl` started records and uses finished command
+  records for validity and command matching.
+- Documented how to inspect `status.json` and `*.agent.stderr.txt -Wait`.
+
+### Verification
+
+- `npm.cmd run build`: passed.
+- `eval run --command "node --version"` prints progress, creates
+  `status.json`, streams stdout/stderr files, and scores as `Valid: yes`.
+
+## 2026-05-25 - Codex
+
+### Status
+
 Fixed Windows eval command execution after live testing showed `codex` could be
 found in PowerShell but failed under Node `spawn`, and failed agent commands
 were still being scored as if the run were valid.

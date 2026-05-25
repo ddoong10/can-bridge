@@ -73,8 +73,11 @@ function scoreArtifacts(input: {
 }): EvalScoreBreakdown {
   const checks: EvalScoreBreakdown["checks"] = [];
   const expected = input.testCase.expected ?? {};
-  const commandText = input.commands.map((c) => c.cmd.join(" ")).join("\n");
-  const agentCommand = input.commands[0];
+  const finishedCommands = input.commands.filter(
+    (c) => c.finishedAt.length > 0,
+  );
+  const commandText = finishedCommands.map((c) => c.cmd.join(" ")).join("\n");
+  const agentCommand = finishedCommands[0];
   const agentRunOk = agentCommand?.exitCode === 0;
   if (agentCommand) {
     checks.push({
