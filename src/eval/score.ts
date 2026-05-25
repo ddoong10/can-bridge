@@ -40,6 +40,8 @@ export function formatEvalScore(score: EvalScoreBreakdown): string {
     `Task: ${score.taskId}`,
     `Condition: ${score.condition}`,
     `Run: ${score.runDir}`,
+    `Valid: ${score.valid ? "yes" : "no"}`,
+    ...(score.invalidReason ? [`Invalid Reason: ${score.invalidReason}`] : []),
     "",
     `Critical Fact Recall: ${s.criticalFactRecall.toFixed(1)}`,
     `Behavioral Adherence: ${s.behavioralAdherence.toFixed(1)}`,
@@ -72,6 +74,25 @@ function scoreArtifacts(input: {
   const checks: EvalScoreBreakdown["checks"] = [];
   const expected = input.testCase.expected ?? {};
   const commandText = input.commands.map((c) => c.cmd.join(" ")).join("\n");
+  const agentCommand = input.commands[0];
+  const agentRunOk = agentCommand?.exitCode === 0;
+  if (agentCommand) {
+    checks.push({
+      id: "agentCommand",
+      ok: agentRunOk,
+      score: agentRunOk ? 100 : 0,
+      detail: agentRunOk
+        ? "agent command exited 0"
+        : `agent command failed with exitCode ${String(agentCommand.exitCode)}`,
+    });
+  } else {
+    checks.push({
+      id: "agentCommand",
+      ok: false,
+      score: 0,
+      detail: "agent command was not recorded",
+    });
+  }
 
   const mustModifyScores =
     expected.mustModify?.map((file) => {
@@ -152,10 +173,12 @@ function scoreArtifacts(input: {
     ...mustNotModifyScores,
     ...forbiddenContentScores,
   ]);
-  const taskSuccess = average([
-    mustRunScore,
-    ...mustModifyScores,
-  ]);
+  const taskSuccess = agentRunOk
+    ? average([
+        mustRunScore,
+        ...mustModifyScores,
+      ])
+    : 0;
   const conflictAvoidance = average([
     ...mustNotModifyScores,
     ...forbiddenCommandScores,
@@ -170,18 +193,28 @@ function scoreArtifacts(input: {
     weights.taskSuccess +
     weights.conflictAvoidance +
     weights.tokenEfficiency;
-  const final =
+  const final = agentRunOk
+    ?
     (factRecall * weights.criticalFactRecall +
       behavioralAdherence * weights.behavioralAdherence +
       taskSuccess * weights.taskSuccess +
       conflictAvoidance * weights.conflictAvoidance +
       tokenEfficiency * weights.tokenEfficiency) /
-    totalWeight;
+      totalWeight
+    : 0;
 
   return {
     taskId: input.testCase.taskId,
     condition: input.condition,
     runDir: input.runDir,
+    valid: agentRunOk,
+    ...(agentRunOk
+      ? {}
+      : {
+          invalidReason: agentCommand
+            ? `agent command failed with exitCode ${String(agentCommand.exitCode)}`
+            : "agent command was not recorded",
+        }),
     scores: {
       criticalFactRecall: factRecall,
       behavioralAdherence,

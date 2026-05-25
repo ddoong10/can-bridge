@@ -68,6 +68,8 @@ export interface EvalScoreBreakdown {
   taskId: string;
   condition: EvalCondition;
   runDir: string;
+  valid: boolean;
+  invalidReason?: string;
   scores: {
     criticalFactRecall: number;
     behavioralAdherence: number;

@@ -42,7 +42,8 @@ normalizing, and handing off coding-agent conversations across tools.
   `can-bridge eval score`; it records run artifacts under `runs/` and scores
   against JSON eval cases in `tests/evals/fixtures/`. The default final score
   excludes token efficiency so Converted vs No Context comparisons focus on
-  behavior; token efficiency remains a reported diagnostic.
+  behavior; token efficiency remains a reported diagnostic. Failed agent
+  commands are marked invalid and receive a final score of 0.
 - `docs/RELATED_PROJECTS.md` tracks adjacent GitHub projects and positions
   this repo as a context interchange core, not primarily a live bridge.
 - `docs/ALIAS_SHARE_SPEC.md` drafts the short alias + friend sharing design.
