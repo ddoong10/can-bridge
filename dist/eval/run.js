@@ -70,14 +70,15 @@ export async function runEvalCase(opts) {
     else {
         console.error("[2/5] No context conversion for this condition");
     }
-    const cmd = opts.command
-        ? commandFromTemplate(opts.command, testCase.prompt, resumeSessionId)
+    const commandSpec = opts.command
+        ? { cmd: commandFromTemplate(opts.command, testCase.prompt, resumeSessionId) }
         : defaultAgentCommand(opts.agent, testCase.prompt, resumeSessionId);
-    console.error(`[3/5] Starting agent command: ${formatCommandForLog(cmd)}`);
-    const run = await runCommand(cmd, cwd, runDir, {
+    console.error(`[3/5] Starting agent command: ${formatCommandForLog(commandSpec.cmd)}`);
+    const run = await runCommand(commandSpec.cmd, cwd, runDir, {
         label: "agent",
         commandsPath,
         statusPath,
+        stdinText: commandSpec.stdinText,
         statusBase: {
             runDir,
             caseId: testCase.taskId,
@@ -86,7 +87,10 @@ export async function runEvalCase(opts) {
         },
     });
     await appendJsonl(commandsPath, run.record);
-    await appendFile(transcriptPath, `# Command\n${cmd.join(" ")}\n\n`);
+    await appendFile(transcriptPath, `# Command\n${commandSpec.cmd.join(" ")}\n\n`);
+    if (commandSpec.stdinText !== undefined) {
+        await appendFile(transcriptPath, `# stdin\n${commandSpec.stdinText}\n\n`);
+    }
     await appendFile(transcriptPath, `# stdout\n${run.stdout}\n\n# stderr\n${run.stderr}\n`);
     console.error(`[3/5] Agent exited ${String(run.record.exitCode)}`);
     console.error("[4/5] Capturing git diff");
@@ -102,7 +106,20 @@ export async function runEvalCase(opts) {
         },
     });
     await appendJsonl(commandsPath, diff.record);
-    await fs.writeFile(path.join(runDir, "diff.patch"), diff.stdout, "utf8");
+    const untracked = await runCommand(["git", "ls-files", "--others", "--exclude-standard"], cwd, runDir, {
+        label: "git-untracked",
+        commandsPath,
+        statusPath,
+        statusBase: {
+            runDir,
+            caseId: testCase.taskId,
+            condition: opts.condition,
+            agent: opts.agent,
+        },
+    });
+    await appendJsonl(commandsPath, untracked.record);
+    const untrackedDiff = await renderUntrackedDiff(cwd, untracked.stdout);
+    await fs.writeFile(path.join(runDir, "diff.patch"), diff.stdout + untrackedDiff, "utf8");
     await fs.writeFile(path.join(runDir, "context-stats.json"), JSON.stringify(stats, null, 2) + "\n", "utf8");
     if (opts.noScore)
         return { runDir };
@@ -135,21 +152,25 @@ export async function runEvalCase(opts) {
 function defaultAgentCommand(agent, prompt, resumeSessionId) {
     if (agent === "codex") {
         const executable = process.platform === "win32" ? "codex.cmd" : "codex";
-        return resumeSessionId
+        const cmd = resumeSessionId
             ? [
                 executable,
                 "exec",
                 "--skip-git-repo-check",
+                "--sandbox",
+                "workspace-write",
                 "resume",
                 resumeSessionId,
-                prompt,
             ]
-            : [executable, "exec", "--skip-git-repo-check", prompt];
+            : [executable, "exec", "--skip-git-repo-check", "--sandbox", "workspace-write"];
+        return { cmd, stdinText: prompt };
     }
     const executable = process.platform === "win32" ? "claude.cmd" : "claude";
-    return resumeSessionId
-        ? [executable, "--print", "--resume", resumeSessionId, prompt]
-        : [executable, "--print", prompt];
+    return {
+        cmd: resumeSessionId
+            ? [executable, "--print", "--resume", resumeSessionId, prompt]
+            : [executable, "--print", prompt],
+    };
 }
 export function commandFromTemplate(template, prompt, resumeSessionId) {
     const promptToken = "\u0000CAN_BRIDGE_PROMPT\u0000";
@@ -214,6 +235,7 @@ async function runCommand(cmd, cwd, runDir, opts) {
         currentCommand: cmd,
         stdoutFile: path.basename(stdoutFile),
         stderrFile: path.basename(stderrFile),
+        stdin: opts.stdinText !== undefined,
         updatedAt: startedAt,
     });
     const result = await new Promise((resolve) => {
@@ -221,14 +243,18 @@ async function runCommand(cmd, cwd, runDir, opts) {
         const child = spawn(spawnCmd.file, spawnCmd.args, {
             cwd,
             windowsHide: true,
+            stdio: [opts.stdinText !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
         });
+        if (opts.stdinText !== undefined) {
+            child.stdin?.end(opts.stdinText + "\n");
+        }
         const stdoutChunks = [];
         const stderrChunks = [];
-        child.stdout.on("data", (chunk) => {
+        child.stdout?.on("data", (chunk) => {
             stdoutChunks.push(chunk);
             void stdoutHandle.write(chunk);
         });
-        child.stderr.on("data", (chunk) => {
+        child.stderr?.on("data", (chunk) => {
             stderrChunks.push(chunk);
             void stderrHandle.write(chunk);
         });
@@ -310,6 +336,33 @@ async function latestSessionId(source) {
             return best;
         return st > bt ? session : best;
     }).id;
+}
+async function renderUntrackedDiff(cwd, stdout) {
+    const files = stdout
+        .split(/\r?\n/)
+        .map((line) => normalizePath(line.trim()))
+        .filter((line) => line.length > 0);
+    let out = "";
+    for (const file of files) {
+        let content;
+        try {
+            content = await fs.readFile(path.join(cwd, file), "utf8");
+        }
+        catch {
+            continue;
+        }
+        out += `diff --git a/${file} b/${file}\n`;
+        out += "new file mode 100644\n";
+        out += "--- /dev/null\n";
+        out += `+++ b/${file}\n`;
+        for (const line of content.split(/\r?\n/)) {
+            out += `+${line}\n`;
+        }
+    }
+    return out;
+}
+function normalizePath(value) {
+    return value.replace(/\\/g, "/").replace(/^\.?\//, "");
 }
 async function appendJsonl(filePath, value) {
     await appendFile(filePath, JSON.stringify(value) + "\n");

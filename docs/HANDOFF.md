@@ -7,6 +7,38 @@ entries go at the top.
 
 ### Status
 
+Fixed the live Windows Codex eval path after testing showed prompt argv
+splitting, stdin hangs, read-only Codex sandboxing, and missing untracked files
+in captured diffs.
+
+### Changed
+
+- Default Codex eval commands now pass the prompt through stdin instead of argv.
+- Eval command spawning explicitly closes child stdin after writing the prompt.
+- Default Codex eval commands include `--sandbox workspace-write` so coding
+  tasks can modify files inside the eval workspace.
+- `diff.patch` now includes untracked files from
+  `git ls-files --others --exclude-standard`, so newly added fixtures count for
+  `mustModify` checks.
+
+### Verification
+
+- `npm.cmd run build`: passed.
+- Live eval in `C:\tmp\can-bridge-evals\stdin-live-check-run`: Codex exited
+  0 with prompt read from stdin.
+- Live eval in `C:\tmp\can-bridge-evals\stdin-workspace-check-run`: Codex ran
+  with `sandbox: workspace-write`.
+- Live eval in `C:\tmp\can-bridge-evals\stdin-untracked-check-run`: final
+  score `100.0 (valid)`, including `mustModify:tests/evals/fixtures`.
+- `node --test tests\smoke.test.mjs --test-name-pattern eval`: eval tests
+  passed, but this Node invocation still ran the whole file and the known
+  inject-style tests failed under sandbox EPERM when writing to
+  `C:\Users\sg682\.claude` / `.codex`.
+
+## 2026-05-25 - Codex
+
+### Status
+
 Added visible progress artifacts for long `can-bridge eval run` executions.
 
 ### Changed
