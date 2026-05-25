@@ -114,24 +114,65 @@ function defaultAgentCommand(
   resumeSessionId: string | undefined,
 ): string[] {
   if (agent === "codex") {
+    if (process.platform === "win32") {
+      const promptArg = powershellSingleQuoted(prompt);
+      const script = resumeSessionId
+        ? `& codex.cmd exec --skip-git-repo-check resume ${powershellSingleQuoted(resumeSessionId)} ${promptArg}`
+        : `& codex.cmd exec --skip-git-repo-check ${promptArg}`;
+      return [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+      ];
+    }
     return resumeSessionId
-      ? ["codex", "exec", "--skip-git-repo-check", "resume", resumeSessionId, prompt]
+      ? [
+          "codex",
+          "exec",
+          "--skip-git-repo-check",
+          "resume",
+          resumeSessionId,
+          prompt,
+        ]
       : ["codex", "exec", "--skip-git-repo-check", prompt];
+  }
+  if (process.platform === "win32") {
+    const promptArg = powershellSingleQuoted(prompt);
+    const script = resumeSessionId
+      ? `& claude.cmd --print --resume ${powershellSingleQuoted(resumeSessionId)} ${promptArg}`
+      : `& claude.cmd --print ${promptArg}`;
+    return [
+      "powershell.exe",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      script,
+    ];
   }
   return resumeSessionId
     ? ["claude", "--print", "--resume", resumeSessionId, prompt]
     : ["claude", "--print", prompt];
 }
 
-function commandFromTemplate(
+export function commandFromTemplate(
   template: string,
   prompt: string,
   resumeSessionId: string | undefined,
 ): string[] {
+  const promptToken = "\u0000CAN_BRIDGE_PROMPT\u0000";
+  const sessionToken = "\u0000CAN_BRIDGE_SESSION\u0000";
   const rendered = template
-    .replaceAll("{{prompt}}", prompt)
-    .replaceAll("{{sessionId}}", resumeSessionId ?? "");
-  return splitCommand(rendered);
+    .replaceAll("{{prompt}}", promptToken)
+    .replaceAll("{{sessionId}}", sessionToken);
+  return splitCommand(rendered).map((part) =>
+    part
+      .replaceAll(promptToken, prompt)
+      .replaceAll(sessionToken, resumeSessionId ?? ""),
+  );
 }
 
 function splitCommand(command: string): string[] {
@@ -175,7 +216,8 @@ async function runCommand(
     stdout: string;
     stderr: string;
   }>((resolve) => {
-    const child = spawn(cmd[0]!, cmd.slice(1), {
+    const spawnCmd = prepareSpawnCommand(cmd);
+    const child = spawn(spawnCmd.file, spawnCmd.args, {
       cwd,
       windowsHide: true,
     });
@@ -213,6 +255,32 @@ async function runCommand(
       stderrFile: path.basename(stderrFile),
     },
   };
+}
+
+function prepareSpawnCommand(cmd: string[]): { file: string; args: string[] } {
+  const file = cmd[0]!;
+  const args = cmd.slice(1);
+  if (
+    process.platform === "win32" &&
+    (file.toLowerCase().endsWith(".cmd") || file.toLowerCase().endsWith(".bat"))
+  ) {
+    const comspec = process.env.ComSpec || "cmd.exe";
+    return {
+      file: comspec,
+      args: ["/d", "/s", "/c", cmd.map(quoteWindowsCmdArg).join(" ")],
+    };
+  }
+  return { file, args };
+}
+
+function quoteWindowsCmdArg(arg: string): string {
+  if (arg.length === 0) return '""';
+  if (!/[()\s"%!^&|<>]/.test(arg)) return arg;
+  return `"${arg.replace(/(["^&|<>])/g, "^$1").replace(/%/g, "%%")}"`;
+}
+
+function powershellSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function pickSource(id: "codex" | "claude-code"): SourceAdapter {

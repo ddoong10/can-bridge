@@ -7,6 +7,38 @@ entries go at the top.
 
 ### Status
 
+Fixed Windows eval command execution after live testing showed `codex` could be
+found in PowerShell but failed under Node `spawn`, and failed agent commands
+were still being scored as if the run were valid.
+
+### Changed
+
+- Default eval commands now use `codex.cmd` / `claude.cmd` on Windows.
+- `.cmd` and `.bat` commands are launched through `cmd.exe /d /s /c` with
+  argument quoting so npm shims work from Node.
+- Custom command templates now preserve `{{prompt}}` as one argv item instead
+  of splitting it on spaces.
+- Eval scores now include `valid` / `invalidReason`; failed or missing agent
+  commands set `Task Success` and final score to `0.0`.
+- Added smoke coverage for prompt argv preservation and invalid agent-command
+  scoring.
+
+### Verification
+
+- `npm.cmd run build`: passed.
+- Eval-specific smoke tests passed; full `node --test tests\smoke.test.mjs`
+  still hits the known sandbox limitation where inject-style tests cannot write
+  to `C:\Users\sg682\.claude` / `.codex`.
+- Re-scored a previously failed Windows run: output now reports `Valid: no`,
+  `Invalid Reason: agent command failed with exitCode 2`, and `Final Score:
+  0.0`.
+- `eval run --command "node --version"` creates a valid smoke run and
+  `eval score` reports `Valid: yes`.
+
+## 2026-05-25 - Codex
+
+### Status
+
 Adjusted the eval scoring model after the first live smoke comparison showed
 Converted scoring below No Context solely because of token-efficiency penalty.
 

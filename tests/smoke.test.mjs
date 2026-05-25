@@ -29,6 +29,8 @@ import {
   packageToContext,
   readPackage,
 } from "../dist/share/import.js";
+import { commandFromTemplate } from "../dist/eval/run.js";
+import { scoreEvalRun } from "../dist/eval/score.js";
 import {
   CBCTX_SCHEMA_V1,
   computeCbctxContentHash,
@@ -1382,4 +1384,68 @@ test("pickLatestSession is deterministic when timestamps are missing or tied", a
   };
   const r2 = await pickLatestSession(sourceB);
   assert.equal(r2.id, "zulu");
+});
+
+test("eval command template keeps prompt as one argv item", () => {
+  const prompt = "Add one eval fixture using the prior session decision.";
+  const cmd = commandFromTemplate(
+    'codex.cmd exec --skip-git-repo-check "{{prompt}}"',
+    prompt,
+    undefined,
+  );
+  assert.deepEqual(cmd, [
+    "codex.cmd",
+    "exec",
+    "--skip-git-repo-check",
+    prompt,
+  ]);
+});
+
+test("eval scoring marks failed agent commands invalid", async () => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-eval-score-"));
+  const casePath = path.join(temp, "case.json");
+  const runDir = path.join(temp, "run");
+  await fs.mkdir(runDir);
+  await fs.writeFile(
+    casePath,
+    JSON.stringify({
+      taskId: "failed-agent",
+      taskType: "gotcha",
+      prompt: "do work",
+      expected: {
+        mustModify: ["docs/EVALUATION.md"],
+      },
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(runDir, "commands.jsonl"),
+    JSON.stringify({
+      cmd: ["codex.cmd", "exec", "--skip-git-repo-check", "do work"],
+      cwd: temp,
+      startedAt: "2026-05-25T00:00:00.000Z",
+      finishedAt: "2026-05-25T00:00:01.000Z",
+      exitCode: 2,
+    }) + "\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(runDir, "context-stats.json"),
+    JSON.stringify({
+      condition: "no-context",
+      agent: "codex",
+      promptBytes: 7,
+    }),
+    "utf8",
+  );
+  await fs.writeFile(path.join(runDir, "diff.patch"), "", "utf8");
+  await fs.writeFile(path.join(runDir, "transcript.txt"), "error", "utf8");
+
+  const score = await scoreEvalRun(casePath, runDir);
+  assert.equal(score.valid, false);
+  assert.match(score.invalidReason, /exitCode 2/);
+  assert.equal(score.scores.taskSuccess, 0);
+  assert.equal(score.scores.final, 0);
+
+  await fs.rm(temp, { recursive: true, force: true });
 });

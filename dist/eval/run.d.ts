@@ -14,3 +14,4 @@ export declare function runEvalCase(opts: EvalRunOptions): Promise<{
     runDir: string;
     scorePath?: string;
 }>;
+export declare function commandFromTemplate(template: string, prompt: string, resumeSessionId: string | undefined): string[];
