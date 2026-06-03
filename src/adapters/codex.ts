@@ -535,6 +535,17 @@ function buildCodexJsonl(
   const ts = now.toISOString();
   const cwd = context.source.cwd ?? process.cwd();
 
+  // Precompute every tool_result id in the whole conversation so the
+  // per-message projection can tell which tool_use calls would dangle.
+  const outputCallIds = new Set<string>();
+  for (const msg of context.messages) {
+    for (const b of msg.content) {
+      if (b.type === "tool_result" && b.toolUseId) {
+        outputCallIds.add(b.toolUseId);
+      }
+    }
+  }
+
   out.push(
     JSON.stringify({
       timestamp: ts,
@@ -553,7 +564,7 @@ function buildCodexJsonl(
   );
 
   for (const msg of context.messages) {
-    const items = messageToResponseItems(msg);
+    const items = messageToResponseItems(msg, outputCallIds);
     for (const item of items) {
       out.push(
         JSON.stringify({
@@ -609,30 +620,58 @@ function buildBaseInstructions(ctx: NormalizedContext): string {
 }
 
 
-function messageToResponseItems(msg: NormalizedMessage): unknown[] {
+/**
+ * Project one NormalizedMessage to Codex response_items.
+ *
+ * Order-preserving: blocks are emitted in their original sequence so the
+ * causal flow `text → call → text → call` survives instead of being
+ * regrouped into "all text, then all calls". Consecutive text blocks are
+ * coalesced into a single message item; a tool_use/tool_result flushes the
+ * pending text first.
+ *
+ * Dangling-call repair: every `function_call` Codex sees is expected to be
+ * followed by a matching `function_call_output`. A tool_use whose id never
+ * appears as a tool_result in the *whole* conversation (e.g. the source was
+ * extracted mid-flight before the result was recorded) would otherwise emit
+ * an unpaired call. We append a synthetic placeholder output right after it
+ * so the rollout stays well-formed. `outputCallIds` is the set of all
+ * tool_result ids across the context, precomputed by the caller.
+ */
+function messageToResponseItems(
+  msg: NormalizedMessage,
+  outputCallIds: Set<string>,
+): unknown[] {
   const items: unknown[] = [];
+  let textBuffer: string[] = [];
 
-  // 1. Plain text (and optional thinking) → one message item.
-  const textChunks: string[] = [];
-  for (const b of msg.content) {
-    if (b.type === "text") textChunks.push(b.text);
-    // thinking blocks deliberately dropped — internal to source model.
-  }
-  if (textChunks.length > 0) {
-    let role: "user" | "assistant" | "developer" = "user";
-    if (msg.role === "assistant") role = "assistant";
-    else if (msg.role === "system") role = "developer";
-    const blockType = role === "assistant" ? "output_text" : "input_text";
+  let textRole: "user" | "assistant" | "developer" = "user";
+  if (msg.role === "assistant") textRole = "assistant";
+  else if (msg.role === "system") textRole = "developer";
+  const blockType = textRole === "assistant" ? "output_text" : "input_text";
+
+  const flushText = (): void => {
+    if (textBuffer.length === 0) return;
     items.push({
       type: "message",
-      role,
-      content: [{ type: blockType, text: textChunks.join("\n\n") }],
+      role: textRole,
+      content: [{ type: blockType, text: textBuffer.join("\n\n") }],
     });
-  }
+    textBuffer = [];
+  };
 
-  // 2. Each tool_use → function_call item.
   for (const b of msg.content) {
+    if (b.type === "text") {
+      textBuffer.push(b.text);
+      continue;
+    }
+    // thinking blocks deliberately dropped — internal to source model.
+    if (b.type === "thinking") continue;
+
     if (b.type === "tool_use") {
+      flushText();
+      // Never emit an empty call_id: a call that cannot be referenced
+      // can never be paired with its output.
+      const callId = b.id ?? `call_${crypto.randomUUID().replace(/-/g, "")}`;
       items.push({
         type: "function_call",
         name: b.name,
@@ -640,23 +679,42 @@ function messageToResponseItems(msg: NormalizedMessage): unknown[] {
           typeof b.input === "string"
             ? b.input
             : JSON.stringify(b.input ?? {}),
-        call_id: b.id ?? `call_${crypto.randomUUID().replace(/-/g, "")}`,
+        call_id: callId,
       });
+      // Repair: if no tool_result anywhere references this call, the call
+      // would dangle. Emit a synthetic, clearly-labelled placeholder output.
+      if (!b.id || !outputCallIds.has(b.id)) {
+        items.push({
+          type: "function_call_output",
+          call_id: callId,
+          output:
+            "[can-bridge: no tool output was recorded in the source " +
+            "session for this call]",
+        });
+      }
+      continue;
     }
-  }
 
-  // 3. Each tool_result → function_call_output item.
-  for (const b of msg.content) {
     if (b.type === "tool_result") {
+      flushText();
+      // A tool_result with no toolUseId is already orphaned in the source;
+      // give it a stable synthetic id rather than an empty string so the
+      // wire format never carries call_id:"".
+      const callId =
+        b.toolUseId && b.toolUseId.length > 0
+          ? b.toolUseId
+          : `call_${crypto.randomUUID().replace(/-/g, "")}`;
       const prefix = b.isError ? "[error] " : "";
       items.push({
         type: "function_call_output",
-        call_id: b.toolUseId ?? "",
+        call_id: callId,
         output: prefix + b.output,
       });
+      continue;
     }
   }
 
+  flushText();
   return items;
 }
 

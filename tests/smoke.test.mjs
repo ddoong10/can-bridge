@@ -634,6 +634,96 @@ test("isError:true round-trips through Codex (inject encodes, extract decodes)",
   await fs.unlink(result.locator).catch(() => {});
 });
 
+test("CodexAdapter inject repairs a dangling tool_use (no matching tool_result) with a synthetic output", async () => {
+  // A session extracted mid-flight: the assistant called a tool but the
+  // result was never recorded. Every function_call must still be paired.
+  const norm = {
+    schemaVersion: "0.1",
+    source: { tool: "test", cwd: process.cwd() },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "calling a tool" },
+          {
+            type: "tool_use",
+            id: "call_dangling_1",
+            name: "Read",
+            input: { path: "x.ts" },
+          },
+        ],
+      },
+    ],
+  };
+
+  const codex = new CodexAdapter();
+  const result = await codex.inject(norm);
+  const raw = await fs.readFile(result.locator, "utf8");
+  const payloads = raw
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l).payload)
+    .filter(Boolean);
+
+  const calls = payloads.filter((p) => p.type === "function_call");
+  const outs = payloads.filter((p) => p.type === "function_call_output");
+  const callIds = new Set(calls.map((c) => c.call_id));
+  const outIds = new Set(outs.map((o) => o.call_id));
+  // Every call is paired; none dangles; no empty call_id is ever emitted.
+  for (const id of callIds) assert.ok(outIds.has(id), `call ${id} must be paired`);
+  for (const o of outs) assert.notEqual(o.call_id, "", "call_id must never be empty");
+  const synthetic = outs.find((o) => o.call_id === "call_dangling_1");
+  assert.ok(synthetic, "synthetic output for the dangling call must exist");
+  assert.match(synthetic.output, /no tool output was recorded/);
+
+  await fs.unlink(result.locator).catch(() => {});
+});
+
+test("CodexAdapter inject preserves interleaved text/tool block order", async () => {
+  // text → call → text must stay in order, not regroup to text,text → call.
+  const norm = {
+    schemaVersion: "0.1",
+    source: { tool: "test", cwd: process.cwd() },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "FIRST" },
+          { type: "tool_use", id: "c1", name: "Bash", input: { command: "ls" } },
+          { type: "text", text: "SECOND" },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", toolUseId: "c1", output: "ok", isError: false },
+        ],
+      },
+    ],
+  };
+
+  const codex = new CodexAdapter();
+  const result = await codex.inject(norm);
+  const raw = await fs.readFile(result.locator, "utf8");
+  const types = raw
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l).payload)
+    .filter((p) => p && ["message", "function_call", "function_call_output"].includes(p.type));
+
+  // Expect order: message(FIRST), function_call(c1), message(SECOND),
+  // then the user-side function_call_output(c1).
+  const seq = types.map((p) =>
+    p.type === "message" ? p.content[0].text : p.type,
+  );
+  const firstIdx = seq.indexOf("FIRST");
+  const callIdx = seq.indexOf("function_call");
+  const secondIdx = seq.indexOf("SECOND");
+  assert.ok(firstIdx < callIdx && callIdx < secondIdx, `order broken: ${seq.join(",")}`);
+
+  await fs.unlink(result.locator).catch(() => {});
+});
+
 test("ClaudeCodeAdapter extract picks the latest-leaf branch when a session has multiple branches", async () => {
   // Synthetic Claude Code JSONL with two assistant branches off the same
   // user message. The "newer" branch (later timestamp) should win; the

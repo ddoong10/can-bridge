@@ -3,6 +3,48 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Claude Code
+
+### Status
+
+Limitations analysis (`docs/LIMITATIONS.md`) + fixed 3 inject-side fidelity
+defects it surfaced. Cross-checked with Codex(gpt-5.5) as the target agent.
+
+### Changed
+
+- Added `docs/LIMITATIONS.md`: extraction vs injection vs fundamental limits,
+  per-direction extraction loss (loss is a function of SOURCE only;
+  claude→claude / codex→codex are also lossy via the normalized bottleneck),
+  and an evidence-based "why not extract all lines" section (194KB of dropped
+  bytes are hook/scaffolding noise; only `hook_additional_context` is worth
+  selectively recovering).
+- `src/adapters/codex.ts` `messageToResponseItems()` rewritten:
+  - **Block order preserved** (was: all text → all tool_use → all tool_result;
+    now: original interleaved order, consecutive text coalesced).
+  - **Dangling tool_use repaired**: `buildCodexJsonl` precomputes the set of all
+    tool_result ids; a tool_use with no matching result gets a synthetic
+    placeholder `function_call_output` so every call is paired.
+  - **No empty call_id**: tool_result without toolUseId now gets a synthetic id.
+- `tests/smoke.test.mjs`: +2 regression tests (dangling repair, interleaved
+  order).
+
+### Verification
+
+- `npm run build`: clean.
+- `node --test tests/smoke.test.mjs`: **44/44 pass**.
+- Live re-conversion of a real Claude session: function_call vs output
+  **dangling 6 → 0** (6 synthetic outputs), empty call_id 0.
+
+### Notes / Remaining (from LIMITATIONS §4.5)
+
+- Tier-B (mitigable, unimplemented): foreign-tool namespacing (2.1),
+  selective `hook_additional_context` recovery (1.1), CLAUDE.md/AGENTS.md
+  embedding (1.2), cwd/branch/commit capture + mismatch warning (2.7).
+- Tier-C (impossible): behavioral equivalence, thinking/reasoning recovery,
+  pre-compacted source originals, cache benefit, zero injection risk.
+- `[error]` prefix ambiguity (2.5) and `toolu_` call_id provenance (2.4) left
+  as-is intentionally (low value / round-trip risk).
+
 ## 2026-05-25 - Codex
 
 ### Status

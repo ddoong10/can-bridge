@@ -49,6 +49,7 @@ export async function runEvalCase(opts) {
             ? await latestSessionId(source)
             : opts.sourceSession;
         const ctx = await source.extract(locator);
+        ctx.source.cwd = cwd;
         const result = await target.inject(ctx);
         resumeSessionId =
             typeof result.details?.sessionId === "string"
