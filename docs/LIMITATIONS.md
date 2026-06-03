@@ -123,8 +123,8 @@ Claude Code가 자동 compaction(요약)을 한 세션이면 소스 파일 자�
 
 ## 2. 이식 한계 — 변환해도 타겟에 같은 의미로 안 붙는 것
 
-### 2.1 도구 이름 불일치 — 가장 치명적 (실측)
-변환된 Codex rollout의 `function_call.name` 실측:
+### 2.1 도구 이름 불일치 — 가장 치명적 (⚠️ 완화됨)
+변환된 Codex rollout의 `function_call.name` 실측(수정 전):
 ```
 Read:10, Bash:5, ToolSearch:1, Write:1, Glob:1,
 mcp__plugin_oh-my-claudecode_x__ask_codex:3,
@@ -141,6 +141,19 @@ Codex 자가진단(gpt-5.5)이 직접 지적한 결과:
 - MCP 도구 결과(`Task`, 브라우저, GitHub, DB 등)는 자격증명·라이브 상태에
   의존 → Codex가 재현 불가. "증거(evidence)"로만 봐야 하는데 실행 가능한
   capability로 오인될 위험.
+
+**완화(구현됨)** — Codex가 자기 도구로 오인하는 걸 두 겹으로 차단:
+1. **Foreign tool 마킹**: 비-Codex 소스의 도구 이름을 `foreign_tool:<source>:<name>`
+   으로 접두(예: `foreign_tool:claude-code:Read`). 네이티브 `function_call`처럼
+   보이지 않게 함. extract 시 접두 제거 → round-trip 무손실·재주입 idempotent.
+   라이브 실측: 변환된 rollout의 모든 도구명이 마킹됨(`Read/Bash/Edit/mcp__*`).
+2. **Preamble 강화** (`buildBaseInstructions`): "도구 호출은 과거 증거다 / 소스
+   도구명은 지금 없으니 의도를 네 도구로 매핑하라 / 편집 전 파일·git 상태 재검증
+   하라"를 명시. 회귀 테스트 2개 추가(마킹·미마킹).
+
+**남는 한계(원리적)**: 마킹·preamble은 *오인 방지*일 뿐, 과거 호출을 **재실행
+가능하게** 만들진 못한다. `shell_command`↔`Bash` 같은 의미 매핑은 미구현이며,
+`TodoWrite`·`Task`·MCP는 대응물 자체가 없음.
 
 ### 2.2 짝 없는 도구 호출 (dangling call) — ✅ 해결됨
 **증상(수정 전)**: function_call 23 vs function_call_output 17 → 6 dangling.
@@ -228,16 +241,18 @@ Codex `developer` role(권한·협업모드 preamble)은 normalized `system`으�
 ### ✅ 고친 것 (이번 작업, 코드+회귀 테스트)
 | # | 한계 | 수정 | 검증 |
 |---|---|---|---|
+| 2.1 | 도구 이름 불일치(오인) | foreign 마킹(`foreign_tool:src:name`)+preamble 강화 | 라이브 전건 마킹, 테스트 2개 |
 | 2.2 | dangling 도구 호출 | 매칭 없는 call에 합성 output 삽입 | dangling 6→0, 테스트 추가 |
 | 2.3 | 블록 순서 평탄화 | 원본 순서 보존 재작성 | 순서 테스트 추가 |
 | 2.4 | 빈 call_id | 합성 id 생성 | 빈 call_id 0, 테스트 |
 
-→ 전체 스위트 **44/44 통과**, 빌드 clean.
+→ 전체 스위트 **46/46 통과**, 빌드 clean.
 
 ### ❌ 그래도 안 되는 것 (수정 후에도 남음)
 **완화만 가능(B) — "transcript만 옮긴다"는 본질**
-- **도구 이름 불일치(2.1)**: foreign 네임스페이스/텍스트화로 *오인*은 막아도
-  과거 호출을 재실행 가능하게는 못 만듦. (미구현)
+- **도구 이름 불일치(2.1)**: 마킹·preamble로 *오인*은 막았으나(완화됨), 과거
+  호출을 재실행 가능하게는 못 만듦. 의미 매핑(`Bash↔shell_command`) 미구현,
+  `TodoWrite/Task/MCP`는 대응물 없음.
 - **합성 output의 내용**: dangling을 포맷상 복구했지만 *원래 무엇을 반환했는지*는
   소스에 없어 자리표시자뿐.
 - **라인 67% 손실(1.1)**: 노이즈라 다 넣으면 오히려 악화. `hook_additional_context`

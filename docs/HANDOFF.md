@@ -3,6 +3,52 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Claude Code (context-preservation pass)
+
+### Status
+
+Implemented the two highest-impact context-preservation improvements (Codex-
+reviewed): foreign-tool marking + stronger import preamble. Target: stop the
+resumed Codex agent from mistaking Claude's tool history for its own callable
+tools.
+
+### Changed (`src/adapters/codex.ts`)
+
+- **Foreign-tool marking**: tool_use names from a non-Codex source are emitted
+  as `foreign_tool:<source>:<name>` (e.g. `foreign_tool:claude-code:Read`)
+  instead of a bare native `function_call` name. `markForeignToolName` /
+  `unmarkForeignToolName`; extract strips the prefix so Norm→Codex→Norm is
+  lossless and re-injection is idempotent. Codex-native sources are left as-is.
+- **Preamble** (`buildBaseInstructions`): for non-Codex sources, adds explicit
+  continuation guidance — tool calls are historical evidence, source tool names
+  don't exist here (map intent to your own tools), re-verify files/git state
+  before editing.
+- `tests/smoke.test.mjs`: +2 tests (foreign marking + round-trip; native source
+  not marked).
+
+### Verification
+
+- Build clean, **46/46** smoke tests pass.
+- Live claude→codex conversion (into a temp `CB_CODEX_HOME`): every tool name
+  marked (`foreign_tool:claude-code:{Read,Bash,Edit,Grep,Glob,Write,mcp__*,…}`),
+  all three preamble guidance lines present.
+
+### Remaining (LIMITATIONS §2.1)
+
+- Marking/preamble prevent *misidentification* only; they cannot make past calls
+  re-executable. Semantic mapping (`Bash↔shell_command`) unimplemented;
+  `TodoWrite`/`Task`/MCP have no target equivalent.
+- Symmetric foreign-tool marking on the **Claude inject** side (codex→claude:
+  Claude sees `shell_command`) is not done yet — consider next.
+
+## 2026-06-03 - Claude Code (test isolation)
+
+P0-1 fixed: adapters/doctor resolve the session store from `CB_CLAUDE_HOME` /
+`CB_CODEX_HOME` at call time; smoke suite points both at a throwaway `mkdtemp`
+home so `inject()` never writes to the real `~/.claude` / `~/.codex`. The
+"ambiguous id" test no longer writes fixtures into the real projects dir.
+Design reviewed by Codex(gpt-5.5). 44/44 → (now 46/46) pass. Commit `14b581e`.
+
 ## 2026-06-03 - Claude Code
 
 ### Status

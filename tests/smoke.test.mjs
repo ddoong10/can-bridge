@@ -741,6 +741,76 @@ test("CodexAdapter inject preserves interleaved text/tool block order", async ()
   await fs.unlink(result.locator).catch(() => {});
 });
 
+test("CodexAdapter inject marks foreign (non-Codex) tool names and round-trips them back", async () => {
+  const norm = {
+    schemaVersion: "0.1",
+    source: { tool: "claude-code", cwd: process.cwd() },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "c_read_1", name: "Read", input: { path: "a.ts" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", toolUseId: "c_read_1", output: "ok", isError: false },
+        ],
+      },
+    ],
+  };
+
+  const codex = new CodexAdapter();
+  const result = await codex.inject(norm);
+
+  // Wire format: the call name is marked unmistakably foreign.
+  const raw = await fs.readFile(result.locator, "utf8");
+  assert.match(raw, /"name":"foreign_tool:claude-code:Read"/);
+
+  // Base instructions explain the foreign/historical nature.
+  const meta = JSON.parse(raw.split("\n").find((l) => l.includes("session_meta")));
+  const baseText = meta.payload.base_instructions.text;
+  assert.match(baseText, /HISTORICAL evidence from claude-code/);
+  assert.match(baseText, /do\s+NOT exist here/i);
+
+  // Re-extract: the marker is stripped, so the original name is recovered.
+  const re = await codex.extract(result.locator);
+  const tu = re.messages
+    .flatMap((m) => m.content)
+    .find((b) => b.type === "tool_use");
+  assert.equal(tu.name, "Read", "round-trip must recover the original tool name");
+
+  await fs.unlink(result.locator).catch(() => {});
+});
+
+test("CodexAdapter inject does NOT mark tool names for a Codex-native source", async () => {
+  const norm = {
+    schemaVersion: "0.1",
+    source: { tool: "codex", cwd: process.cwd() },
+    messages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "c1", name: "shell_command", input: { command: "ls" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", toolUseId: "c1", output: "ok" }],
+      },
+    ],
+  };
+
+  const codex = new CodexAdapter();
+  const result = await codex.inject(norm);
+  const raw = await fs.readFile(result.locator, "utf8");
+  assert.match(raw, /"name":"shell_command"/);
+  assert.doesNotMatch(raw, /foreign_tool:/, "native Codex tools must not be marked");
+
+  await fs.unlink(result.locator).catch(() => {});
+});
+
 test("ClaudeCodeAdapter extract picks the latest-leaf branch when a session has multiple branches", async () => {
   // Synthetic Claude Code JSONL with two assistant branches off the same
   // user message. The "newer" branch (later timestamp) should win; the
