@@ -3,6 +3,28 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Codex (PPT open-source positioning)
+
+### Status
+
+Updated the PPT handoff document's open-source integration slide wording.
+
+### Changed
+
+- Reframed OpenClaw/Hermes-style projects as multi-agent orchestration layers.
+- Positioned can-bridge as a context artifact/interchange layer that can plug
+  into those orchestrators through `.cbctx`.
+- Strengthened the long-term vision: `.cbctx` should become the main memory
+  format for agent memory/session stores, not only an import/export bridge.
+- Added the Hugging Face-for-contexts framing as a long-term hub direction,
+  while tying it to open-source agent memory/session stores rather than
+  deterministic model reproduction.
+- Added a concise presenter line for slide 10.
+
+### Verification
+
+- Documentation-only change; no build/test run.
+
 ## 2026-06-03 - Codex (optional context budgeting)
 
 ### Status

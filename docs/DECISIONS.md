@@ -103,3 +103,11 @@ target context window but reduce replay fidelity. Use `--context-mode slim` and
 the lower-level `--no-native`, `--since-compact`, and
 `--max-tool-output-chars` flags for portable handoffs that would otherwise hit
 context limits.
+
+## D-0012 - Treat .cbctx As The Long-Term Memory Format
+
+The near-term `.cbctx` role is portable import/export for agent
+memory/session stores. The long-term product direction is stronger:
+`.cbctx` should become the main storage and interchange format for AI-agent
+working memory, so orchestrators, local coding agents, and a future context hub
+can read, write, verify, and share the same context artifact.
