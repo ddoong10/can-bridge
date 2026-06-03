@@ -28,6 +28,14 @@ export interface CbctxPackage {
     summary?: string;
     /** Normalized conversation, ready to inject into any TargetAdapter. */
     messages: NormalizedMessage[];
+    /**
+     * Verbatim native session artifact(s), kept so a SAME-tool import can
+     * restore the original session far more faithfully than the normalized
+     * messages allow (Codex reasoning items, turn_context, runtime events).
+     * Optional and backward-compatible — cross-tool imports ignore it and use
+     * `messages`. Treated as untrusted data; each carries its own contentHash.
+     */
+    native?: CbctxNativeArtifact[];
     /** What --redact stripped, surfaced so the receiver can audit. */
     redaction: CbctxRedactionInfo;
     /**
@@ -45,6 +53,18 @@ export interface CbctxPackage {
      * When present, importers verify it before injection.
      */
     contentHash?: string;
+}
+export interface CbctxNativeArtifact {
+    /** Tool whose native format `content` is in, e.g. "codex". */
+    tool: string;
+    /** Format id, e.g. "codex.rollout.jsonl", "claude-code.session.jsonl". */
+    format: string;
+    capturedAt?: string;
+    sessionId?: string;
+    /** sha256 over `content` — verified on import; mismatch ⇒ ignore artifact. */
+    contentHash: string;
+    /** Verbatim native session (JSONL lines joined by "\n"). */
+    content: string;
 }
 export interface CbctxRepoRef {
     remote?: string;
@@ -80,6 +100,10 @@ export interface CbctxDoctorSnapshot {
  * deps so importers running offline still work.
  */
 export declare function computeCbctxContentHash(pkg: Pick<CbctxPackage, "source" | "summary" | "messages">): string;
+/** sha256 over a native artifact's verbatim content. Kept separate from the
+ *  package contentHash so the (large) native payload doesn't have to be
+ *  re-canonicalized, and so older importers ignore it cleanly. */
+export declare function computeNativeContentHash(content: string): string;
 /**
  * Structural guard for an unknown JSON blob. Returns true only if the
  * minimum-required v1 fields are present and have the expected shape.

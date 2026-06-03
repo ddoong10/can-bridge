@@ -56,6 +56,12 @@ export function redactContext(ctx) {
         ...ctx,
         summary: ctx.summary ? redactText(ctx.summary) : ctx.summary,
         messages,
+        // The verbatim `raw` lines (used for same-tool native replay) bypass the
+        // message walker, so redact them too — otherwise `...ctx` would copy
+        // unredacted secrets straight through to the target session.
+        raw: ctx.raw
+            ? { tool: ctx.raw.tool, lines: ctx.raw.lines.map(redactText) }
+            : ctx.raw,
     };
 }
 function redactBlock(b) {

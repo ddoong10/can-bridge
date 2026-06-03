@@ -44,6 +44,19 @@ export interface NormalizedContext {
     summary?: string;
     messages: NormalizedMessage[];
     metadata?: Record<string, unknown>;
+    /**
+     * Verbatim source session lines, kept so a SAME-tool inject can replay the
+     * native format losslessly instead of reconstructing from `messages` (which
+     * drops reasoning items, per-turn settings, and runtime events). Optional;
+     * cross-tool injects ignore it and use `messages`. Redaction strips it.
+     */
+    raw?: RawSession;
+}
+export interface RawSession {
+    /** The tool whose native session format `lines` are in, e.g. "codex". */
+    tool: string;
+    /** Verbatim JSONL lines from the source session (no trailing newlines). */
+    lines: string[];
 }
 export interface SourceInfo {
     /** e.g. "claude-code", "codex-cli". */

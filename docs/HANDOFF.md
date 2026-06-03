@@ -3,6 +3,71 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Codex (native preservation review follow-up)
+
+### Status
+
+Kept the same-tool native artifact path fidelity-first, and added guardrails
+that document the trade-off without weakening the preservation goal.
+
+### Changed
+
+- Added a cross-tool regression test: `.cbctx` packages may contain Codex native
+  artifacts, but importing the package into Claude Code uses the normalized
+  transcript and does not leak Codex-native reasoning lines.
+- Clarified `buildCodexFromRaw()` as an intentional fidelity-first replay path:
+  only `session_meta` is replaced; other raw Codex lines are preserved for
+  same-tool recall quality.
+- Updated `docs/LIMITATIONS.md` and `docs/TECH_DEBT.md` to state that native
+  artifacts prioritize same-tool fidelity now, while stronger hash anchoring /
+  signatures are future Context Hub hardening work.
+
+### Verification
+
+- `npm test`: passed, **55/55** tests.
+
+## 2026-06-03 - Claude Code (same-tool native preservation in .cbctx)
+
+### Status
+
+Implemented the Codex-authored spec: preserve the verbatim native session so a
+SAME-tool round-trip (codex→codex, incl. via `.cbctx`) restores far more than the
+normalized schema allows. Cross-tool still uses NormalizedContext. NON-GOAL
+(unchanged): KV cache / hidden reasoning state / server state are not replicated.
+
+### Changed
+
+- `schema/context.ts`: `NormalizedContext.raw?: RawSession { tool, lines }`.
+- `adapters/codex.ts`: extract carries `raw` (verbatim rollout); inject replays
+  it via `buildCodexFromRaw` when `raw.tool === "codex"` (fresh session_meta +
+  fence, drops the source's session_meta, keeps reasoning/turn_context/events).
+- `schema/cbctx.ts`: `CbctxPackage.native?: CbctxNativeArtifact[]`
+  ({tool, format, capturedAt, sessionId, contentHash, content}) +
+  `computeNativeContentHash`.
+- `share/share.ts`: `buildPackage` emits a native artifact from `working.raw`
+  (already thinking-stripped + redacted upstream).
+- `share/import.ts`: `packageToContext` restores `raw` from `native[]` only when
+  tool matches AND the artifact hash verifies (untrusted ⇒ else fall back to
+  normalized). Import already rewrites cwd→receiver; inject already mints a new
+  session id.
+- `transform/redactor.ts`: redacts `raw.lines` too (so `--redact` covers native).
+- `tests/smoke.test.mjs`: +6 tests (native replay; cbctx native present;
+  import-uses-native w/ new id + receiver cwd; tampered native ignored; no-native
+  fallback; redacted native has no secret).
+
+### Verification
+
+- Build clean, **54/54** smoke tests pass.
+- Live e2e: codex rollout → .cbctx (native, reasoning kept) → import → codex
+  inject preserves reasoning/turn_context, fresh id, receiver cwd; `--redact`
+  scrubs secrets inside native; tampered native falls back.
+
+### Pending
+
+- Diff sent to Codex(gpt-5.5) for review (per the agreed flow). Apply findings
+  before final. Follow-ups: claude→claude native artifact (symmetric); a
+  `--preserve-session-id` flag; doctor check for native format drift.
+
 ## 2026-06-03 - Claude Code (repo-state verification, #3)
 
 ### Status

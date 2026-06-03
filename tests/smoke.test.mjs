@@ -789,6 +789,150 @@ test("CodexAdapter inject marks foreign (non-Codex) tool names and round-trips t
   await fs.unlink(result.locator).catch(() => {});
 });
 
+test("CodexAdapter codex→codex replays the native rollout (preserves reasoning/turn_context the normalized path drops)", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-native-"));
+  const src = path.join(
+    tmp,
+    "rollout-2026-01-01T00-00-00-000Z-11111111-1111-1111-1111-111111111111.jsonl",
+  );
+  const lines = [
+    { timestamp: "t0", type: "session_meta", payload: { id: "11111111-1111-1111-1111-111111111111", cwd: "/x", base_instructions: { text: "orig" } } },
+    { timestamp: "t1", type: "turn_context", payload: { model: "gpt-5.5", reasoning_effort: "xhigh" } },
+    { timestamp: "t2", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } },
+    { timestamp: "t3", type: "response_item", payload: { type: "reasoning", summary: [{ type: "summary_text", text: "REASON_TRACE_XYZ" }] } },
+    { timestamp: "t4", type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "hi" }] } },
+    { timestamp: "t5", type: "event_msg", payload: { type: "token_count", total: 123 } },
+  ].map((o) => JSON.stringify(o)).join("\n") + "\n";
+  await fs.writeFile(src, lines, "utf8");
+
+  const codex = new CodexAdapter();
+  const ctx = await codex.extract(src);
+  assert.equal(ctx.raw?.tool, "codex");
+  assert.ok(ctx.raw?.lines.length >= 6, "raw lines should be carried");
+
+  const result = await codex.inject(ctx);
+  const out = await fs.readFile(result.locator, "utf8");
+  // Things the normalized reconstruction would DROP, preserved verbatim:
+  assert.match(out, /REASON_TRACE_XYZ/, "reasoning item preserved");
+  assert.match(out, /xhigh/, "turn_context reasoning_effort preserved");
+  assert.match(out, /token_count/, "runtime event preserved");
+  // Exactly one session_meta: the source's is dropped, ours is prepended.
+  assert.equal((out.match(/"type":"session_meta"/g) || []).length, 1);
+  assert.match(out.split("\n")[0], /imported context follows/, "fresh meta carries the fence");
+
+  await fs.unlink(result.locator).catch(() => {});
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
+async function makeCodexRolloutCtx(extra = []) {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-cbctx-"));
+  const src = path.join(
+    tmp,
+    "rollout-2026-01-01T00-00-00-000Z-22222222-2222-2222-2222-222222222222.jsonl",
+  );
+  const lines = [
+    { timestamp: "t0", type: "session_meta", payload: { id: "22222222-2222-2222-2222-222222222222", cwd: "/old/path", base_instructions: { text: "orig" } } },
+    { timestamp: "t1", type: "turn_context", payload: { model: "gpt-5.5", reasoning_effort: "xhigh" } },
+    { timestamp: "t2", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } },
+    { timestamp: "t3", type: "response_item", payload: { type: "reasoning", summary: [{ type: "summary_text", text: "NATIVE_REASON_KEEP" }] } },
+    ...extra,
+  ].map((o) => JSON.stringify(o)).join("\n") + "\n";
+  await fs.writeFile(src, lines, "utf8");
+  const ctx = await new CodexAdapter().extract(src);
+  return { ctx, tmp };
+}
+
+test("cbctx: built from Codex includes a native codex.rollout.jsonl artifact", async () => {
+  const { ctx, tmp } = await makeCodexRolloutCtx();
+  const { pkg } = await buildPackage(ctx);
+  assert.ok(Array.isArray(pkg.native) && pkg.native.length === 1);
+  assert.equal(pkg.native[0].tool, "codex");
+  assert.equal(pkg.native[0].format, "codex.rollout.jsonl");
+  assert.match(pkg.native[0].content, /NATIVE_REASON_KEEP/);
+  assert.equal(typeof pkg.native[0].contentHash, "string");
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
+test("cbctx: importing a Codex package back to Codex uses the native path (reasoning preserved, new id, receiver cwd)", async () => {
+  const { ctx, tmp } = await makeCodexRolloutCtx();
+  const { pkg } = await buildPackage(ctx);
+  const restored = packageToContext(pkg);
+  assert.equal(restored.raw?.tool, "codex", "native artifact restored to raw");
+
+  restored.source.cwd = "/receiver/path";
+  const codex = new CodexAdapter();
+  const result = await codex.inject(restored);
+  const out = await fs.readFile(result.locator, "utf8");
+  const meta = JSON.parse(out.split("\n")[0]);
+  assert.match(out, /NATIVE_REASON_KEEP/, "native reasoning preserved on restore");
+  assert.notEqual(meta.payload.id, "22222222-2222-2222-2222-222222222222", "fresh session id");
+  assert.equal(meta.payload.cwd, "/receiver/path", "receiver cwd applied");
+
+  await fs.unlink(result.locator).catch(() => {});
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
+test("cbctx: a tampered native artifact is ignored (falls back to normalized)", async () => {
+  const { ctx, tmp } = await makeCodexRolloutCtx();
+  const { pkg } = await buildPackage(ctx);
+  // Corrupt the native content without fixing its hash.
+  pkg.native[0].content = pkg.native[0].content.replace("NATIVE_REASON_KEEP", "TAMPERED");
+  const restored = packageToContext(pkg);
+  assert.equal(restored.raw, undefined, "hash mismatch → native ignored");
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
+test("cbctx: fallback to normalized when no native artifact is present", async () => {
+  const norm = {
+    schemaVersion: "0.1",
+    source: { tool: "codex", cwd: process.cwd() },
+    messages: [{ role: "user", content: [{ type: "text", text: "plain hi" }] }],
+  };
+  const { pkg } = await buildPackage(norm);
+  assert.equal(pkg.native, undefined, "no source file → no native artifact");
+  const restored = packageToContext(pkg);
+  assert.equal(restored.raw, undefined);
+  const result = await new CodexAdapter().inject(restored);
+  const out = await fs.readFile(result.locator, "utf8");
+  assert.match(out, /plain hi/, "normalized inject still works");
+  await fs.unlink(result.locator).catch(() => {});
+});
+
+test("cbctx: redacted share does not leak unredacted secrets in the native artifact", async () => {
+  const { ctx, tmp } = await makeCodexRolloutCtx([
+    { timestamp: "t4", type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "key sk-ant-SECRETKEY1234567890abcdef" }] } },
+  ]);
+  const { pkg } = await buildPackage(ctx, { redact: true });
+  assert.ok(pkg.native, "native still present when redacting");
+  assert.doesNotMatch(pkg.native[0].content, /sk-ant-SECRETKEY/, "raw secret must be scrubbed");
+  assert.match(pkg.native[0].content, /REDACTED/, "redaction marker present in native");
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
+test("cbctx: cross-tool import ignores native artifacts and uses normalized messages", async () => {
+  const { ctx, tmp } = await makeCodexRolloutCtx();
+  const { pkg } = await buildPackage(ctx);
+  assert.match(pkg.native[0].content, /NATIVE_REASON_KEEP/);
+
+  const packagePath = path.join(tmp, "handoff.cbctx");
+  await writePackage(pkg, packagePath);
+
+  const { result } = await importPackage(packagePath, new ClaudeCodeAdapter(), {
+    receiverCwd: process.cwd(),
+  });
+  const out = await fs.readFile(result.locator, "utf8");
+
+  assert.match(out, /hello/, "normalized transcript should be imported");
+  assert.doesNotMatch(
+    out,
+    /NATIVE_REASON_KEEP/,
+    "Codex-native reasoning must not leak into a Claude target import",
+  );
+
+  await fs.unlink(result.locator).catch(() => {});
+  await fs.rm(tmp, { recursive: true, force: true });
+});
+
 test("gitMismatchWarning: commit/dirty/verify logic", () => {
   const src = { branch: "main", commit: "aaaaaaa", dirty: false };
   // Same commit + same dirty → no warning.

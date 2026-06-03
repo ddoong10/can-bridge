@@ -54,6 +54,11 @@ skip — 오염 아님.)
 - VISION의 provenance·면접 평가 use case는 **암호학적 서명/증명**(누가·언제·
   무엇을, 위변조 불가)이 전제인데 현재 없음. 해시는 "내용 일치" 확인일 뿐
   "출처 진위" 보장이 아님.
+- Same-tool fidelity를 위해 추가된 `native[]` artifact는 현재 보존율 우선 경로다.
+  각 artifact는 자체 hash를 갖지만, 공개 허브/평가 용도로 쓰려면 native
+  artifact hash를 package-level hash에 anchor하고 서명까지 연결해야 한다.
+  지금 발표 범위에서는 "정확한 복원 성능"을 우선하고, 강한 provenance hardening은
+  후속 과제로 둔다.
 
 ### P1-3. dist를 git에 커밋 → src/dist 드리프트
 - `dist/` 51개 파일이 tracked(원래는 GitHub 설치 시 tsc 불필요하게 하려는 의도).

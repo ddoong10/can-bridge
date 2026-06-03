@@ -125,6 +125,10 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
       source: { tool: "codex", model, sessionId, capturedAt, cwd, git },
       summary,
       messages,
+      // Keep the verbatim rollout so a codex→codex inject can replay it
+      // losslessly (reasoning items, turn_context, runtime events) instead of
+      // reconstructing from the lossy normalized messages.
+      raw: { tool: "codex", lines },
       metadata: { sourceFile: filePath },
     };
   }
@@ -190,7 +194,15 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
     const currentGit = captureGitState(process.cwd());
     const gitWarning = gitMismatchWarning(context.source.git, currentGit);
 
-    const lines = buildCodexJsonl(context, sessionId, now, gitWarning);
+    // Same-tool (codex→codex): replay the verbatim native rollout so
+    // reasoning items, turn_context, and runtime events survive — the
+    // normalized reconstruction would drop them. Cross-tool or redacted
+    // contexts (which carry no `raw`) fall back to reconstruction.
+    const nativeReplay =
+      context.raw && context.raw.tool === "codex" ? context.raw.lines : null;
+    const lines = nativeReplay
+      ? buildCodexFromRaw(context, sessionId, now, nativeReplay, gitWarning)
+      : buildCodexJsonl(context, sessionId, now, gitWarning);
     await fs.writeFile(filePath, lines.join("\n") + "\n", "utf8");
 
     // Pre-register the thread row so `codex resume <id>` (TUI) finds it
@@ -636,6 +648,59 @@ function buildCodexJsonl(
         );
       }
     }
+  }
+  return out;
+}
+
+/**
+ * codex→codex native replay. Prepend a fresh `session_meta` (new id + our
+ * import fence / git warning) and then keep every original line verbatim
+ * EXCEPT the source's own `session_meta`. This preserves reasoning items,
+ * `turn_context`, and runtime `event_msg`s that the normalized reconstruction
+ * drops — making same-tool transfer ~as faithful as a native resume.
+ *
+ * Fidelity-first trade-off: non-session_meta lines may still contain historical
+ * runtime metadata from the source environment. We keep them intentionally for
+ * same-tool recall quality; the fresh session_meta + git warning tell the
+ * resumed agent which cwd/session is current.
+ */
+function buildCodexFromRaw(
+  context: NormalizedContext,
+  sessionId: string,
+  now: Date,
+  rawLines: string[],
+  gitWarning: string | null,
+): string[] {
+  const ts = now.toISOString();
+  const cwd = context.source.cwd ?? process.cwd();
+  const out: string[] = [
+    JSON.stringify({
+      timestamp: ts,
+      type: "session_meta",
+      payload: {
+        id: sessionId,
+        timestamp: ts,
+        cwd,
+        originator: "can-bridge",
+        cli_version: HARNESS_SENTINEL,
+        source: "can-bridge-import",
+        model_provider: "openai",
+        base_instructions: { text: buildBaseInstructions(context, gitWarning) },
+      },
+    }),
+  ];
+  for (const line of rawLines) {
+    // Drop the source's original session_meta; keep everything else verbatim.
+    let type: unknown;
+    try {
+      type = (JSON.parse(line) as { type?: unknown }).type;
+    } catch {
+      // Unparseable line — keep it verbatim rather than silently dropping data.
+      out.push(line);
+      continue;
+    }
+    if (type === "session_meta") continue;
+    out.push(line);
   }
   return out;
 }

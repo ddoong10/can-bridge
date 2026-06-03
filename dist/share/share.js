@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { CBCTX_SCHEMA_V1, computeCbctxContentHash } from "../schema/cbctx.js";
+import { CBCTX_SCHEMA_V1, computeCbctxContentHash, computeNativeContentHash, } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 import { HARNESS_VERSION } from "../version.js";
@@ -49,12 +49,17 @@ export async function buildPackage(ctx, opts = {}) {
         summary: working.summary,
         messages: working.messages,
     });
+    // Persist the verbatim native session so a same-tool import can restore it
+    // far more faithfully than `messages` allow. `working.raw` was already
+    // redacted upstream when --redact was set, so no unredacted secret leaks in.
+    const native = buildNativeArtifacts(working);
     const pkg = {
         schema: CBCTX_SCHEMA_V1,
         source,
         ...(repo ? { repo } : {}),
         ...(working.summary ? { summary: working.summary } : {}),
         messages: working.messages,
+        ...(native.length > 0 ? { native } : {}),
         redaction,
         ...(doctor ? { doctor } : {}),
         createdAt: new Date().toISOString(),
@@ -163,6 +168,39 @@ function diffFindings(before, after) {
     }
     out.sort((a, b) => a.kind.localeCompare(b.kind));
     return out;
+}
+/** Map a source tool to its native session format id. */
+function nativeFormatFor(tool) {
+    if (tool === "codex")
+        return "codex.rollout.jsonl";
+    if (tool === "claude-code")
+        return "claude-code.session.jsonl";
+    return null;
+}
+/**
+ * Build native artifact(s) from the (already thinking-stripped / redacted)
+ * working context's verbatim `raw` lines, when present and from a tool we
+ * have a format id for. Empty array ⇒ no native artifact (e.g. a synthesized
+ * context with no original source file).
+ */
+function buildNativeArtifacts(ctx) {
+    const raw = ctx.raw;
+    if (!raw || raw.lines.length === 0)
+        return [];
+    const format = nativeFormatFor(raw.tool);
+    if (!format)
+        return [];
+    const content = raw.lines.join("\n");
+    return [
+        {
+            tool: raw.tool,
+            format,
+            capturedAt: ctx.source.capturedAt,
+            sessionId: ctx.source.sessionId,
+            contentHash: computeNativeContentHash(content),
+            content,
+        },
+    ];
 }
 function stripThinkingBlocks(ctx) {
     let touched = false;

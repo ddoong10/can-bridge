@@ -119,6 +119,21 @@ Claude Code가 자동 compaction(요약)을 한 세션이면 소스 파일 자�
 > 핵심: "같은 도구니까 그대로 복사되겠지"는 **틀림**. 모든 경로가 normalized
 > 병목을 지나며, 그 스키마에 없는 건 방향과 무관하게 사라진다.
 
+**✅ 완화(구현됨) — same-tool native 보존**: normalized 병목을 *우회*하는 경로 추가.
+- extract가 원본 rollout 라인을 `NormalizedContext.raw`로 보존.
+- **codex→codex inject**는 normalized 재구성 대신 native 라인을 그대로 replay
+  (새 session_meta만 교체) → **reasoning·turn_context·runtime event 보존**.
+- `.cbctx`도 `native[]` artifact(format·contentHash·content)로 영속화 →
+  `codex→.cbctx→codex`가 native backup/restore에 근접. import 시 새 session id +
+  receiver cwd 적용, artifact 해시 불일치 시 normalized로 안전 폴백.
+- **교차 도구(codex→claude 등)는 여전히 normalized**(native는 같은 도구만 이해) →
+  cross-tool은 본질적 lossy 유지. native는 untrusted로 취급(fence·redact 적용).
+- **주의**: native는 codex reasoning을 포함하므로 `.cbctx`의 "thinking 제거 봉인"
+  보장이 *messages*에만 적용됨. `--redact`는 native 라인도 스크럽.
+- **현재 방향성**: 이 경로는 보안/증명보다 **same-tool fidelity**를 우선하는
+  experimental path다. 공개 Context Hub 단계에서는 native artifact hash를
+  package-level hash/signature에 묶는 강한 provenance가 추가로 필요하다.
+
 ---
 
 ## 2. 이식 한계 — 변환해도 타겟에 같은 의미로 안 붙는 것

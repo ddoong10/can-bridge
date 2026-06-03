@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { isCbctxPackage, computeCbctxContentHash } from "../schema/cbctx.js";
+import { isCbctxPackage, computeCbctxContentHash, computeNativeContentHash, } from "../schema/cbctx.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 export async function readPackage(filePath) {
@@ -19,11 +19,17 @@ export async function readPackage(filePath) {
 }
 /** Convert a CbctxPackage back into a NormalizedContext for the inject step. */
 export function packageToContext(pkg) {
+    // Restore the native artifact (when present and intact) so a same-tool
+    // inject replays the original session verbatim. Untrusted data: only used
+    // when its tool matches the source AND its hash verifies; otherwise we
+    // silently fall back to the normalized `messages`.
+    const raw = restoreNativeRaw(pkg);
     return {
         schemaVersion: "0.1",
         source: pkg.source,
         summary: pkg.summary,
         messages: pkg.messages,
+        ...(raw ? { raw } : {}),
         metadata: {
             cbctxRepo: pkg.repo,
             cbctxRedaction: pkg.redaction,
@@ -32,6 +38,21 @@ export function packageToContext(pkg) {
             cbctxHarnessVersion: pkg.harnessVersion,
         },
     };
+}
+function restoreNativeRaw(pkg) {
+    const artifacts = pkg.native;
+    if (!artifacts || artifacts.length === 0)
+        return null;
+    const a = artifacts.find((x) => x.tool === pkg.source.tool);
+    if (!a || typeof a.content !== "string")
+        return null;
+    // Treat native as untrusted: ignore it if the embedded hash doesn't verify.
+    if (computeNativeContentHash(a.content) !== a.contentHash)
+        return null;
+    const lines = a.content.split("\n").filter((l) => l.trim().length > 0);
+    if (lines.length === 0)
+        return null;
+    return { tool: a.tool, lines };
 }
 /**
  * Read package, optionally re-redact, run preflight doctor, then inject.

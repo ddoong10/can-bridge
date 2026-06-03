@@ -25,6 +25,12 @@ export function computeCbctxContentHash(pkg) {
     });
     return createHash("sha256").update(canonical, "utf8").digest("hex");
 }
+/** sha256 over a native artifact's verbatim content. Kept separate from the
+ *  package contentHash so the (large) native payload doesn't have to be
+ *  re-canonicalized, and so older importers ignore it cleanly. */
+export function computeNativeContentHash(content) {
+    return createHash("sha256").update(content, "utf8").digest("hex");
+}
 /**
  * Recursive key-sort canonicalization. Mirrors JSON.stringify's "drop
  * undefined values" rule so a producer that hashes `{x: undefined}` gets

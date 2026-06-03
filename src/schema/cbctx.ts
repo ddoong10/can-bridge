@@ -32,6 +32,14 @@ export interface CbctxPackage {
   summary?: string;
   /** Normalized conversation, ready to inject into any TargetAdapter. */
   messages: NormalizedMessage[];
+  /**
+   * Verbatim native session artifact(s), kept so a SAME-tool import can
+   * restore the original session far more faithfully than the normalized
+   * messages allow (Codex reasoning items, turn_context, runtime events).
+   * Optional and backward-compatible — cross-tool imports ignore it and use
+   * `messages`. Treated as untrusted data; each carries its own contentHash.
+   */
+  native?: CbctxNativeArtifact[];
   /** What --redact stripped, surfaced so the receiver can audit. */
   redaction: CbctxRedactionInfo;
   /**
@@ -49,6 +57,19 @@ export interface CbctxPackage {
    * When present, importers verify it before injection.
    */
   contentHash?: string;
+}
+
+export interface CbctxNativeArtifact {
+  /** Tool whose native format `content` is in, e.g. "codex". */
+  tool: string;
+  /** Format id, e.g. "codex.rollout.jsonl", "claude-code.session.jsonl". */
+  format: string;
+  capturedAt?: string;
+  sessionId?: string;
+  /** sha256 over `content` — verified on import; mismatch ⇒ ignore artifact. */
+  contentHash: string;
+  /** Verbatim native session (JSONL lines joined by "\n"). */
+  content: string;
 }
 
 export interface CbctxRepoRef {
@@ -93,6 +114,13 @@ export function computeCbctxContentHash(
     messages: pkg.messages,
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/** sha256 over a native artifact's verbatim content. Kept separate from the
+ *  package contentHash so the (large) native payload doesn't have to be
+ *  re-canonicalized, and so older importers ignore it cleanly. */
+export function computeNativeContentHash(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
 /**
