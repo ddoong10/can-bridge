@@ -82,4 +82,32 @@
 
 ---
 
+## 부록 — 한계 한눈에 (발표·Q&A 백업)
+
+> **한 줄**: can-bridge에서 안 되는 건 *대화를 옮기는 것*이 아니라,
+> source agent의 **도구·추론·지시 체계·MCP 환경·UI 상태를 target의
+> native 실행 상태로 바꾸는 것**.
+
+**3단 정리 (제일 쉬운 버전)**
+- ✅ **옮긴다**: 대화 내용, 작업 기록(명령·결과·결정)
+- ❌ **못 한다**: 그걸 target의 *native 실행 상태*로 변환 (아래 표)
+- 🚫 **누구도 못 한다**: 모델 내부 상태(KV cache 등) — 파일에 없음(슬라이드 8)
+
+| 영역 | ✅ 옮기는 것 | ❌ 안 되는 것 | 완화 |
+|---|---|---|---|
+| **도구 호출** (Bash/Edit…) | 명령·인자·결과 기록 | native 도구로 1:1 재실행 변환 | 안전한 것만 best-effort 매핑 |
+| **추론** (thinking/reasoning) | 같은 벤더면 원본 보존 | 교차 벤더 native 변환(서명) | same-tool 왕복만 |
+| **지시 체계** (CLAUDE.md↔AGENTS.md) | 힌트·preamble로 전달 | instruction hierarchy 복제 | source 메타·경고 |
+| **MCP/외부 도구** | 호출·입력·결과 기록 | 서버·인증·권한·실시간 상태 | "필요 도구 목록" manifest *(future)* |
+| **active UI** (TodoWrite↔update_plan) | 계획 내용 기록 | target의 활성 plan UI로 복원 | 도구별 전용 처리 *(future)* |
+| **분기 대화** (parentUuid DAG) | 최신 갈래(leaf chain) | 전체 가지 구조 | `.cbctx` branch graph *(future)* |
+| **첨부·이미지** | 텍스트면 보존 | 이미지/바이너리/구조 복원 | `.cbctx` artifact 섹션 *(future)* |
+| **벤더 전용 라인** (turn_context 등) | 같은 도구면 raw 보존 | cross-tool 보존 | *(의도된 설계 — 공통 이해 가능한 것만)* |
+
+> 발표 멘트: *"안 되는 건 대화 이전이 아니라, Claude가 쓰던 도구·추론·지시 체계를
+> Codex의 native 실행 상태로 바꾸는 것입니다. 우리는 이를 억지로 재실행 가능한
+> 척 위조하지 않고, foreign tool history와 `.cbctx`로 정직하게 보존해 넘깁니다."*
+
+---
+
 > 더 필요하면: 상세 대본·Q&A `FINAL_PRESENTATION_NOTES.md` · 한계 상세 `LIMITATIONS.md`
