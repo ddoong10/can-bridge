@@ -7,3 +7,7 @@ runs/
 
 # Real session files used as fixtures should be anonymized first.
 tests/fixtures/*.real.jsonl
+
+# Exported context packages — full transcript + dirty patch dumps. Redaction
+# is opt-in, so these may carry secrets/proprietary code. Never commit.
+*.cbctx
