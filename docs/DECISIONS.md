@@ -83,3 +83,13 @@ Token efficiency is reported by default but not included in the default final
 behavior score. Otherwise Converted can be penalized against No Context purely
 for carrying context, even when behavior is identical. Cases that specifically
 measure compression can opt token efficiency back into the final score.
+
+## D-0010 - Optimize For Practical Continuity, Not Agent Identity
+
+can-bridge should describe fidelity as practical task continuity, not complete
+agent-state cloning. Same-tool native artifacts can preserve recorded session
+items such as Codex `reasoning`, `turn_context`, and runtime events, but hidden
+runtime state such as KV cache, attention state, vendor hidden prompts, and
+unexported scratchpad reasoning is outside the product boundary. `/resume` is
+best understood as reloading persisted transcript/session records, not reviving
+a live model state.

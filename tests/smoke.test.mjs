@@ -933,6 +933,46 @@ test("cbctx: cross-tool import ignores native artifacts and uses normalized mess
   await fs.rm(tmp, { recursive: true, force: true });
 });
 
+test("ClaudeCodeAdapter claude→claude replays native session and preserves signed thinking verbatim", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "can-bridge-cl-native-"));
+  const home = path.join(tmp, "home");
+  const srcDir = path.join(home, "projects", "C--proj");
+  await fs.mkdir(srcDir, { recursive: true });
+  const src = path.join(srcDir, "aaaaaaaa-0000-0000-0000-000000000001.jsonl");
+  const SIG = "EtwEClkIDBgC_FAKE_SIGNATURE_PAYLOAD_812ish";
+  const lines = [
+    { parentUuid: null, type: "user", uuid: "u1", timestamp: "t1", sessionId: "aaaaaaaa-0000-0000-0000-000000000001", cwd: "C:\\proj", message: { role: "user", content: "hello" } },
+    { parentUuid: "u1", type: "assistant", uuid: "a1", timestamp: "t2", sessionId: "aaaaaaaa-0000-0000-0000-000000000001", cwd: "C:\\proj", message: { role: "assistant", content: [ { type: "thinking", thinking: "SECRET_THOUGHT", signature: SIG }, { type: "text", text: "hi back" } ] } },
+  ].map((o) => JSON.stringify(o)).join("\n") + "\n";
+  await fs.writeFile(src, lines, "utf8");
+
+  const prev = process.env.CB_CLAUDE_HOME;
+  process.env.CB_CLAUDE_HOME = home;
+  try {
+    const a = new ClaudeCodeAdapter();
+    const ctx = await a.extract(src);
+    assert.equal(ctx.raw?.tool, "claude-code");
+
+    const result = await a.inject(ctx);
+    const out = await fs.readFile(result.locator, "utf8");
+    const blocks = out
+      .split("\n").filter((l) => l.trim())
+      .map((l) => JSON.parse(l))
+      .flatMap((e) => (Array.isArray(e.message?.content) ? e.message.content : []));
+    const thinking = blocks.find((b) => b.type === "thinking");
+    assert.ok(thinking, "thinking block survived native replay");
+    assert.equal(thinking.signature, SIG, "signature preserved byte-for-byte");
+    assert.equal(thinking.thinking, "SECRET_THOUGHT");
+    // sessionId rewritten to the new file so it resolves on resume
+    const rows = out.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+    assert.ok(rows.every((r) => r.sessionId === result.details.sessionId));
+  } finally {
+    if (prev === undefined) delete process.env.CB_CLAUDE_HOME;
+    else process.env.CB_CLAUDE_HOME = prev;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("gitMismatchWarning: commit/dirty/verify logic", () => {
   const src = { branch: "main", commit: "aaaaaaa", dirty: false };
   // Same commit + same dirty → no warning.

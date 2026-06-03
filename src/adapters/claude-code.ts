@@ -145,6 +145,7 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
           git,
         },
         messages: [],
+        raw: { tool: "claude-code", lines },
         metadata: { sourceFile: filePath },
       };
     }
@@ -255,6 +256,9 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
         git,
       },
       messages: orderedMessages,
+      // Verbatim source lines so a claude→claude inject can replay the native
+      // session (incl. signed thinking blocks) instead of reconstructing it.
+      raw: { tool: "claude-code", lines },
       metadata: { sourceFile: filePath },
     };
   }
@@ -335,7 +339,17 @@ export class ClaudeCodeAdapter implements SourceAdapter, TargetAdapter {
     const sessionId = crypto.randomUUID();
     const filePath = path.join(dir, `${sessionId}.jsonl`);
 
-    const lines = buildClaudeJsonl(context, sessionId, cwd, context.source.model);
+    // Same-tool (claude→claude): replay the verbatim native session so signed
+    // thinking blocks and full line fidelity survive — the normalized
+    // reconstruction drops thinking (rebuilt signatures are rejected by the
+    // API). Cross-tool or redacted-but-rawless contexts fall back.
+    const nativeReplay =
+      context.raw && context.raw.tool === "claude-code"
+        ? context.raw.lines
+        : null;
+    const lines = nativeReplay
+      ? buildClaudeFromRaw(nativeReplay, sessionId, cwd)
+      : buildClaudeJsonl(context, sessionId, cwd, context.source.model);
     await fs.writeFile(filePath, lines.join("\n") + "\n", "utf8");
 
     return {
@@ -508,6 +522,58 @@ function compactPreview(text: string, max = 120): string {
   const compact = text.replace(/\s+/g, " ").trim();
   if (compact.length <= max) return compact;
   return compact.slice(0, max - 3).trimEnd() + "...";
+}
+
+/**
+ * claude→claude native replay. Keeps every original line byte-identical
+ * EXCEPT `sessionId`/`cwd` (so the file resolves under the new session and
+ * project folder) — `message` (incl. thinking + its signature), `uuid`, and
+ * the parent chain are untouched, so signed thinking is preserved exactly.
+ * A fresh fence root is prepended and original roots re-parent onto it.
+ *
+ * Note: whether the Anthropic API accepts replayed signed thinking in a new
+ * session is the open question this path exists to test.
+ */
+function buildClaudeFromRaw(
+  rawLines: string[],
+  sessionId: string,
+  cwd: string,
+): string[] {
+  const out: string[] = [];
+  const fenceUuid = crypto.randomUUID();
+  out.push(
+    JSON.stringify({
+      parentUuid: null,
+      isSidechain: false,
+      userType: "external",
+      entrypoint: "cli",
+      type: "user",
+      uuid: fenceUuid,
+      timestamp: new Date().toISOString(),
+      sessionId,
+      cwd,
+      version: HARNESS_SENTINEL,
+      isCanBridgeFence: true,
+      message: { role: "user", content: UNTRUSTED_FENCE_HEADER },
+    }),
+  );
+  for (const line of rawLines) {
+    let e: Record<string, unknown>;
+    try {
+      e = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      out.push(line); // keep unparseable lines verbatim rather than drop data
+      continue;
+    }
+    if (e.isCanBridgeFence === true) continue; // drop any prior fence
+    e.sessionId = sessionId;
+    e.cwd = cwd;
+    if (e.parentUuid === null || e.parentUuid === undefined) {
+      e.parentUuid = fenceUuid;
+    }
+    out.push(JSON.stringify(e));
+  }
+  return out;
 }
 
 function buildClaudeJsonl(

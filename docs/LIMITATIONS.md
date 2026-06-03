@@ -12,6 +12,14 @@ can-bridge는 **눈에 보이는 대화 transcript(텍스트·도구 호출·도
 워크스페이스 스냅샷·내부 추론**이다. 즉 이것은 *session migration*이 아니라
 *context import*다. 이 구분이 모든 한계의 뿌리다.
 
+단, "reasoning"은 구분해서 말해야 한다. Codex rollout에 **기록된**
+`reasoning`/`turn_context`/`event_msg` 같은 native artifact는 같은 Codex로
+돌아갈 때 보존할 수 있다(§1.6의 native replay). 반대로 KV cache, attention
+state, vendor hidden prompt, 모델 내부 scratchpad처럼 **실행 중에만 존재하는**
+상태는 세션 파일에 export 가능한 형태로 존재하지 않으므로 복제 대상이 아니다.
+그래서 목표는 "동일한 agent identity 복제"가 아니라, 실제 작업을 이어가는 데
+충분한 **practical continuity**를 높이는 것이다.
+
 분류 기준:
 - **추출 한계(Extraction)** — 소스 파일/런타임에 없거나, 있어도 우리가 안 잡는 것.
 - **이식 한계(Injection/Transform)** — 잡아서 변환해도 타겟에서 같은 의미로 안 붙는 것.
@@ -108,25 +116,23 @@ Claude Code가 자동 compaction(요약)을 한 세션이면 소스 파일 자�
 - Claude보다 보조 라인이 적어 *상대적으로* 손실이 작지만, 추론·턴 설정 손실은
   더 큼.
 
-**같은 도구 왕복도 무손실이 아니다** — normalized 스키마가 최소공통분모라서:
-- `claude→claude`: 같은 포맷인데도 **thinking 폐기**(서명 무효라 Claude 자신에게도
-  재주입 불가), hook/attachment/skill 라인 전부 소실, 분기 1개로 축소, gitBranch
-  소실, uuid 체인 재생성. 즉 *identity 복사가 아니라 "텍스트+도구만 남긴 lossy
-  사본"*.
-- `codex→codex`: reasoning·token_count·task 이벤트·turn_context per-turn 설정·
-  developer preamble 의미 소실. base_instructions가 fence 씌워진 summary로 재포장.
+**normalized 경로만 쓰면 같은 도구 왕복도 무손실이 아니다** — 스키마가 최소공통분모라서:
+- `claude→claude`(normalized): **thinking 폐기**, hook/attachment 라인 소실, 분기 1개로 축소, uuid 체인 재생성.
+- `codex→codex`(normalized): reasoning·token_count·turn_context per-turn 설정 소실.
 
-> 핵심: "같은 도구니까 그대로 복사되겠지"는 **틀림**. 모든 경로가 normalized
-> 병목을 지나며, 그 스키마에 없는 건 방향과 무관하게 사라진다.
+> 그래서 **같은 도구로 돌아갈 땐 normalized를 우회**하는 native 보존을 추가했다(아래).
 
-**✅ 완화(구현됨) — same-tool native 보존**: normalized 병목을 *우회*하는 경로 추가.
-- extract가 원본 rollout 라인을 `NormalizedContext.raw`로 보존.
-- **codex→codex inject**는 normalized 재구성 대신 native 라인을 그대로 replay
-  (새 session_meta만 교체) → **reasoning·turn_context·runtime event 보존**.
-- `.cbctx`도 `native[]` artifact(format·contentHash·content)로 영속화 →
-  `codex→.cbctx→codex`가 native backup/restore에 근접. import 시 새 session id +
-  receiver cwd 적용, artifact 해시 불일치 시 normalized로 안전 폴백.
-- **교차 도구(codex→claude 등)는 여전히 normalized**(native는 같은 도구만 이해) →
+**✅ 완화(구현·검증됨) — same-tool native 보존**: normalized 병목을 *우회*.
+- extract가 원본 세션 라인을 `NormalizedContext.raw`로 보존.
+- **codex→codex**: native 라인을 그대로 replay(새 session_meta만 교체)
+  → reasoning·turn_context·runtime event 보존.
+- **claude→claude**: native 라인을 그대로 replay(sessionId/cwd만 재작성, `message`·uuid·
+  서명은 불변) → **signed thinking까지 byte-단위 보존**. 라이브로 `claude --resume`
+  성공 확인(서명 거부 없음, 이전 대화 정상 회상). *단, Claude Code가 매 turn 과거
+  thinking을 전부 재전송하는지는 미확정 — 파일 보존과 재개는 확인됨.*
+- `.cbctx`도 `native[]` artifact로 영속화 → `<tool>→.cbctx→<tool>`이 backup/restore에
+  근접. import 시 새 session id + receiver cwd, 해시 불일치 시 normalized 폴백.
+- **교차 도구(claude↔codex)는 여전히 normalized**(native는 같은 도구만 이해) →
   cross-tool은 본질적 lossy 유지. native는 untrusted로 취급(fence·redact 적용).
 - **주의**: native는 codex reasoning을 포함하므로 `.cbctx`의 "thinking 제거 봉인"
   보장이 *messages*에만 적용됨. `--redact`는 native 라인도 스크럽.
@@ -232,10 +238,12 @@ TodoWrite 계획 상태도 여전히 과거 이력으로만 남음(미구현).
 
 ## 3. 근본 한계 — 포맷을 완벽히 맞춰도 불가능
 
-- **모델 내부 상태(KV 캐시·잠재 추론)는 전이 불가.** 같은 transcript를 줘도
+- **모델 내부 상태(KV 캐시·숨은 추론 상태)는 전이 불가.** 같은 transcript를 줘도
   gpt와 claude는 같은 "이해"를 갖지 않는다. 즉 transcript를 완벽히 옮겨도
   행동 동등성(behavioral equivalence)은 **원리적으로 보장 불가** — 이건
-  포맷 충실도와 별개의 벽이다.
+  포맷 충실도와 별개의 벽이다. 다만 세션 파일에 명시적으로 기록된 Codex
+  `reasoning` item은 같은 도구 native replay에서 보존 가능하며, 여기서 말하는
+  한계는 파일 밖의 hidden/runtime state다.
 - **프롬프트 캐싱/추론 효율**: 네이티브 세션의 캐시 이점은 주입 세션에서 재현 안 됨.
 - **컨텍스트 윈도우 압박**: 현재 요약 없이 통째로 덤프 → 긴 이력이 타겟의
   현재 지시·유효 컨텍스트를 밀어낼 수 있음(크기 가드 미정의).
@@ -292,7 +300,11 @@ TodoWrite 계획 상태도 여전히 과거 이력으로만 남음(미구현).
 
 **원리적으로 불가능(C) — 받아들이고 scope 밖 선언**
 - **행동 동등성**: 다른 모델은 같은 transcript도 다르게 행동. 포맷 100% 맞춰도 벽.
-- **thinking/reasoning 복구**: 서명 무효 → 같은 도구(claude→claude)에도 재주입 불가.
+- **모델 내부 실행 상태(KV cache·내부 reasoning state) 복구**: 세션 파일 밖이라 꺼낼 수 없음.
+  (정정: *파일에 기록된* thinking/reasoning **텍스트**는 native replay로 보존된다 —
+  Claude signed thinking은 byte 단위로 보존돼 `claude --resume`이 거부 없이 재개됨을
+  라이브 확인. Codex `reasoning` item도 같은 Codex replay로 보존. 다만 이건 *기록된
+  텍스트*의 보존이지 모델 내부 상태의 복제가 아니며, cross-tool에서는 여전히 폐기.)
 - **이미 compaction된 소스의 원본**: 업스트림 소실.
 - **프롬프트 캐싱 이점·인젝션 위험 0**: 재현/제거 불가.
 

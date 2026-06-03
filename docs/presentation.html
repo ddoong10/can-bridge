@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>can-bridge — 최종발표</title>
+<style>
+  :root{
+    --bg:#111418; --surface:#191D23; --muted:#232832;
+    --text:#F3F0E8; --text2:#A9B0BA; --line:#343B46;
+    --accent:#E6B450; --warn:#D96C5F; --ok:#5DAA8B;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","Consolas",monospace;
+    --sans:"Pretendard","SUIT","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); overflow:hidden; -webkit-font-smoothing:antialiased}
+  #deck{position:fixed; inset:0; display:grid; place-items:center}
+  .slide{
+    position:absolute; width:100%; height:100%;
+    padding:7vh 8vw; display:flex; flex-direction:column; justify-content:center;
+    opacity:0; visibility:hidden; transform:translateX(28px);
+    transition:opacity .38s ease, transform .38s ease; pointer-events:none;
+  }
+  .slide.active{opacity:1; visibility:visible; transform:none; pointer-events:auto}
+  .slide.prev{transform:translateX(-28px)}
+
+  .kicker{font-size:1.05vw; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); font-weight:600; margin-bottom:2.6vh}
+  h1{font-size:5.6vw; line-height:1.05; font-weight:800; letter-spacing:-.01em}
+  h2{font-size:3.2vw; line-height:1.14; font-weight:700; letter-spacing:-.01em; margin-bottom:4vh}
+  .sub{color:var(--text2); font-size:1.6vw; margin-top:3.4vh; line-height:1.55; max-width:60ch}
+  ul{list-style:none; display:flex; flex-direction:column; gap:2.6vh}
+  li{position:relative; padding-left:1.7em; font-size:1.8vw; line-height:1.45}
+  li::before{content:""; position:absolute; left:0; top:.6em; width:.6em; height:.6em; border:2px solid var(--accent); border-radius:2px}
+  li .dim{color:var(--text2)}
+  code,.tok{font-family:var(--mono); font-size:.9em; color:var(--accent); background:var(--muted); padding:.06em .42em; border-radius:5px; border:1px solid var(--line)}
+  strong{color:#fff; font-weight:700}
+
+  #bar{position:fixed; left:0; bottom:0; height:3px; background:var(--accent); width:0; transition:width .38s ease; z-index:10}
+  #foot{position:fixed; bottom:2.4vh; right:3vw; font-size:1vw; color:var(--text2); z-index:10}
+  #foot b{color:var(--text)}
+  #brand{position:fixed; bottom:2.4vh; left:3vw; font-size:1vw; color:var(--text2); z-index:10}
+  #brand .dot{color:var(--accent)}
+  .hint{position:fixed; top:2.4vh; right:3vw; font-size:.85vw; color:var(--text2); opacity:.55; z-index:10}
+
+  .title-wrap .q{margin-top:3.4vh; font-size:2vw; color:var(--text2); line-height:1.5}
+  .scope{margin-top:5.5vh; display:flex; gap:1.2vw; flex-wrap:wrap}
+  .scope span{font-size:1.05vw; color:var(--text2); border:1px solid var(--line); border-radius:999px; padding:.5em 1.1em}
+  .scope .ex{color:var(--warn); border-color:rgba(217,108,95,.4)}
+
+  .cols{display:grid; grid-template-columns:repeat(3,1fr); gap:1.8vw; margin-top:1vh}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:3vh 1.8vw}
+  .card h3{font-size:1.9vw; margin-bottom:1.8vh; display:flex; align-items:center; gap:.5em}
+  .card .tag{font-family:var(--mono); font-size:1.1vw; padding:.15em .65em; border-radius:6px}
+  .card.a .tag{background:rgba(93,170,139,.16); color:var(--ok); border:1px solid rgba(93,170,139,.4)}
+  .card.b .tag{background:rgba(230,180,80,.14); color:var(--accent); border:1px solid rgba(230,180,80,.4)}
+  .card.c .tag{background:rgba(217,108,95,.14); color:var(--warn); border:1px solid rgba(217,108,95,.4)}
+  .card ul{gap:1.4vh}
+  .card li{font-size:1.28vw; padding-left:1.4em}
+  .card li::before{width:.45em;height:.45em;top:.55em}
+  .card.b li::before{border-color:var(--accent)}
+  .card.c li::before{border-color:var(--warn)}
+  .card.a li::before{border-color:var(--ok)}
+
+  .flow{display:grid; grid-template-columns:1fr auto 1fr auto 1fr; align-items:center; gap:1vw; margin-top:2vh}
+  .flow .step{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:3vh 1.4vw; text-align:center}
+  .flow .step.core{border-color:var(--accent)}
+  .flow .step .n{font-size:1.7vw; font-weight:700}
+  .flow .step .s{font-size:1.1vw; color:var(--text2); margin-top:.8vh}
+  .flow .ar{color:var(--accent); font-family:var(--mono); font-size:1.6vw; text-align:center}
+  .flow .ar small{display:block; color:var(--text2); font-size:.85vw; margin-top:.4vh}
+
+  .arch{display:flex; flex-direction:column; align-items:center; gap:1.2vh; margin-top:1vh}
+  .node{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:2.2vh 2vw; text-align:center; min-width:34vw}
+  .node.core{border-color:var(--accent); box-shadow:0 0 0 1px rgba(230,180,80,.22)}
+  .node .t{font-size:1.7vw; font-weight:700}
+  .node .d{font-size:1.1vw; color:var(--text2); margin-top:.6vh}
+  .arrow{color:var(--accent); font-family:var(--mono); font-size:1.5vw}
+  .arrow .lbl{color:var(--text2); font-size:1vw; margin-left:.5em}
+  .siderail{margin-top:1.4vh; border:1px dashed var(--line); border-radius:10px; padding:1.4vh 1.6vw; color:var(--text2); font-size:1.15vw; text-align:center}
+  .siderail b{color:var(--ok)}
+
+  .tl{display:flex; flex-direction:column; gap:2.2vh; margin-top:1vh}
+  .tl .row{display:grid; grid-template-columns:8vw 1fr; gap:1.6vw; align-items:baseline}
+  .tl .v{font-family:var(--mono); color:var(--accent); font-size:1.3vw; font-weight:700}
+  .tl .x{font-size:1.65vw; line-height:1.4}
+
+  .closing{font-size:2.9vw; line-height:1.4; font-weight:700; max-width:22ch}
+  .closing .accent{color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="deck">
+
+  <!-- 1 TITLE -->
+  <section class="slide title-wrap">
+    <div class="kicker">최종발표 · 2026</div>
+    <h1>can-bridge</h1>
+    <div class="q">한 AI 코딩 도구의 대화를<br/>다른 도구로 그대로 이어가기</div>
+    <div class="scope">
+      <span>① 무엇인가</span><span>② 핵심 아이디어</span><span>③ 어떻게 발전시켰나</span>
+      <span>④ 한계</span><span>⑤ 오픈소스 연관성</span>
+    </div>
+  </section>
+
+  <!-- 2 PROBLEM -->
+  <section class="slide">
+    <div class="kicker">문제</div>
+    <h2>대화 맥락이 도구 안에<br/>갇혀 있다</h2>
+    <ul>
+      <li>Claude Code에서 며칠 쌓은 작업 맥락을 <strong>Codex로 이어가고 싶다</strong></li>
+      <li>지금은 도구를 바꾸면 <span class="dim">맥락을 처음부터 다시 설명해야 한다</span></li>
+    </ul>
+  </section>
+
+  <!-- 3 KEY IDEA: /resume -->
+  <section class="slide">
+    <div class="kicker">핵심 아이디어</div>
+    <h2>‘이어가기’는 사실<br/>저장된 대화를 다시 읽는 것</h2>
+    <ul>
+      <li>대화는 <strong>내 컴퓨터에 파일로 저장</strong>된다 — 그래서 다시 이어갈 수 있다</li>
+      <li>그 파일을 다른 도구로 옮기면 <strong>대화도 따라 옮겨진다</strong> → can-bridge</li>
+    </ul>
+    <div class="sub">비유: <strong>회의록</strong>을 넘기면 논의는 이어진다. 다만 그때의 ‘머릿속 생각’까지 복제되진 않는다.</div>
+  </section>
+
+  <!-- 4 APPROACH -->
+  <section class="slide">
+    <div class="kicker">방법</div>
+    <h2>꺼내기 → 공통형식 → 넣기</h2>
+    <div class="flow">
+      <div class="step"><div class="n">꺼내기</div><div class="s">원본 대화 읽기</div></div>
+      <div class="ar">→</div>
+      <div class="step core"><div class="n">공통 형식</div><div class="s">도구 중립 표현</div></div>
+      <div class="ar">→</div>
+      <div class="step"><div class="n">넣기</div><div class="s">새 도구에 주입</div></div>
+    </div>
+    <div class="sub"><strong>도구마다 작은 변환기 하나</strong>씩. 새 도구를 추가해도 변환기만 더하면 된다.</div>
+  </section>
+
+  <!-- 5 ARCHITECTURE -->
+  <section class="slide">
+    <div class="kicker">구조</div>
+    <h2>가운데 ‘공통 형식’을 거친다</h2>
+    <div class="arch">
+      <div class="node"><div class="t">Claude Code 대화 파일</div></div>
+      <div class="arrow">↓ <span class="lbl">꺼내기</span></div>
+      <div class="node core"><div class="t">공통 형식</div><div class="d">대화 · 도구 사용 기록 · 작업 정보</div></div>
+      <div class="arrow">↓ <span class="lbl">넣기</span></div>
+      <div class="node"><div class="t">Codex 대화 파일</div></div>
+      <div class="siderail">같은 도구로 돌아올 땐 → <b>원본 그대로 보존</b></div>
+    </div>
+    <div class="sub">두 도구의 저장 방식이 달라도, 공통 형식을 거쳐 서로 맞게 바꿔준다.</div>
+  </section>
+
+  <!-- 6 HARD PART -->
+  <section class="slide">
+    <div class="kicker">어려웠던 점</div>
+    <h2>저장 형식이 공개되어<br/>있지 않다</h2>
+    <ul>
+      <li>두 도구의 대화 저장 방식은 <strong>공식 문서가 없다</strong> → 실제 파일을 직접 뜯어보며 알아냄</li>
+      <li>사소한 비공식 규칙 하나에도 막힘 <span class="dim">(폴더 이름 규칙, 내부 인덱스 등)</span></li>
+      <li>교훈: <strong>에러 메시지가 아니라 ‘결과’로 확인</strong>했다</li>
+    </ul>
+  </section>
+
+  <!-- 7 FIDELITY STRATEGY -->
+  <section class="slide">
+    <div class="kicker">얼마나 잘 보존되나</div>
+    <h2>다른 도구 vs 같은 도구</h2>
+    <div class="cols">
+      <div class="card b">
+        <h3>다른 도구로</h3>
+        <ul><li>공통 형식을 거침</li><li>호환되지만 <span class="dim">약간 손실</span></li></ul>
+      </div>
+      <div class="card a">
+        <h3>같은 도구로</h3>
+        <ul><li>원본을 그대로 보존</li><li><strong>거의 그대로 복원</strong></li></ul>
+      </div>
+      <div class="card">
+        <h3>저장 파일</h3>
+        <ul><li>둘 다 담아둠</li><li>나중에 다시 불러오기</li></ul>
+      </div>
+    </div>
+    <div class="sub">“다른 도구로 갈 땐 <strong>공통 형식</strong>, 같은 도구로 돌아올 땐 <strong>원본 보존</strong>.”</div>
+  </section>
+
+  <!-- 8 DEVELOPMENT ARC -->
+  <section class="slide">
+    <div class="kicker">발전 과정</div>
+    <h2>만들고 → 한계를 분석하고<br/>→ 그 한계를 좁히기</h2>
+    <div class="tl">
+      <div class="row"><div class="v">1</div><div class="x">한 방향(Claude → Codex) 먼저</div></div>
+      <div class="row"><div class="v">2</div><div class="x">양방향 + 도구 사용 기록까지 변환</div></div>
+      <div class="row"><div class="v">3</div><div class="x">한계를 정직하게 분석 (아래 ④)</div></div>
+      <div class="row"><div class="v">4</div><div class="x">분석에서 나온 문제들을 코드로 개선</div></div>
+    </div>
+    <div class="sub">개발도 <strong>Claude와 Codex가 문서로 서로 인계·리뷰</strong>하며 진행 — 우리가 푸는 문제를 개발 방식으로 보여준 셈.</div>
+  </section>
+
+  <!-- 9 WHAT WE FIXED -->
+  <section class="slide">
+    <div class="kicker">개선한 것</div>
+    <h2>옮길 때 생기는 손실을 줄임</h2>
+    <ul>
+      <li>끊긴 도구 사용 기록을 <strong>짝 맞춰 메움</strong></li>
+      <li>대화의 <strong>순서</strong>를 원본 그대로 보존</li>
+      <li>옮겨간 도구가 <strong>남의 도구를 자기 것으로 착각하지 않게</strong> 표시</li>
+      <li>작업 폴더가 그새 바뀌면 <strong>경고</strong>해 줌</li>
+    </ul>
+  </section>
+
+  <!-- 10 A/B/C -->
+  <section class="slide">
+    <div class="kicker">한계</div>
+    <h2>정직하게 세 가지로 나눴다</h2>
+    <div class="cols">
+      <div class="card a"><h3><span class="tag">A</span> 해결</h3>
+        <ul><li>코드로 고친 문제</li><li>손실·착오 줄임</li></ul></div>
+      <div class="card b"><h3><span class="tag">B</span> 완화</h3>
+        <ul><li>줄일 순 있지만</li><li>0으로는 못 만듦</li></ul></div>
+      <div class="card c"><h3><span class="tag">C</span> 불가능</h3>
+        <ul><li>원리적으로</li><li>못 옮기는 것</li></ul></div>
+    </div>
+    <div class="sub">“실패 목록”이 아니라 — <strong>고칠 수 있는 것과 경계를 구분</strong>해 보여주는 것.</div>
+  </section>
+
+  <!-- 11 FUNDAMENTAL LIMIT -->
+  <section class="slide">
+    <div class="kicker">근본 한계 (C)</div>
+    <h2>옮길 수 없는 것:<br/>모델의 ‘속마음’</h2>
+    <ul>
+      <li>저장 파일엔 <strong>대화 기록</strong>만 있다 — 모델의 내부 계산 상태는 들어있지 않다</li>
+      <li>그래서 ‘생각의 흐름’이나 내부 캐시는 <strong>밖에서 꺼낼 수 없다</strong></li>
+    </ul>
+    <div class="sub"><strong>버그가 아니라 경계다.</strong> 우리는 기억 복제를 목표로 하지 않는다 — <em>보이는 기록만 정직하게</em> 옮긴다.</div>
+  </section>
+
+  <!-- 12 OPEN SOURCE -->
+  <section class="slide">
+    <div class="kicker">오픈소스 연관성</div>
+    <h2>작고 정직한<br/>‘컨텍스트 변환 코어’</h2>
+    <ul>
+      <li>대화가 <strong>로컬 파일로 남기에</strong> 외부 도구가 읽고 변환할 수 있다</li>
+      <li>비슷한 프로젝트는 있지만 — 우리는 <strong>손실을 아는 것 + 원본 보존</strong>에 집중</li>
+      <li>가볍고 의존성이 적어 <span class="dim">다른 도구가 위에 얹기 쉽다</span></li>
+    </ul>
+  </section>
+
+  <!-- 13 CLOSING -->
+  <section class="slide">
+    <div class="kicker">마무리</div>
+    <div class="closing">
+      can-bridge는 <span class="accent">기억을 복사하지 않는다.</span><br/>
+      대신 <span class="accent">회의록을 가장 정직하게 옮긴다.</span>
+    </div>
+    <div class="sub">다음 방향: 더 많은 도구 지원 · 긴 대화 요약 · 작업 환경 정보 함께 옮기기.</div>
+  </section>
+
+</div>
+
+<div id="bar"></div>
+<div id="brand"><span class="dot">●</span> can-bridge</div>
+<div id="foot"><b id="cur">1</b> / <span id="tot">13</span></div>
+<div class="hint">← → 또는 클릭 · F 전체화면</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0, n = slides.length;
+  document.getElementById('tot').textContent = n;
+  var bar = document.getElementById('bar'), cur = document.getElementById('cur');
+  function render(){
+    slides.forEach(function(s,idx){
+      s.classList.remove('active','prev');
+      if(idx===i) s.classList.add('active');
+      else if(idx<i) s.classList.add('prev');
+    });
+    bar.style.width = (i/(n-1)*100) + '%';
+    cur.textContent = i+1;
+    location.hash = i+1;
+  }
+  function go(d){ i = Math.min(n-1, Math.max(0, i+d)); render(); }
+  function to(k){ i = Math.min(n-1, Math.max(0, k)); render(); }
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){ e.preventDefault(); go(1); }
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){ e.preventDefault(); go(-1); }
+    else if(e.key==='Home') to(0);
+    else if(e.key==='End') to(n-1);
+    else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); }
+  });
+  document.getElementById('deck').addEventListener('click', function(e){
+    go(e.clientX < window.innerWidth*0.32 ? -1 : 1);
+  });
+  var sx=null;
+  document.addEventListener('touchstart',function(e){sx=e.touches[0].clientX},{passive:true});
+  document.addEventListener('touchend',function(e){ if(sx===null) return; var dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40) go(dx<0?1:-1); sx=null; },{passive:true});
+  var h = parseInt(location.hash.replace('#',''),10);
+  if(h>=1 && h<=n) i=h-1;
+  render();
+})();
+</script>
+</body>
+</html>

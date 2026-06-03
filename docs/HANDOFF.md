@@ -3,6 +3,88 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Claude Code (claude→claude native preservation + live signed-thinking test)
+
+### Status
+
+Made same-tool native preservation SYMMETRIC: added it to the Claude adapter
+(already existed for Codex). Live-tested the open question — does a replayed
+session with **signed** Claude thinking survive `claude --resume`? **It does.**
+
+### Changed
+
+- `adapters/claude-code.ts`: extract carries `raw: { tool, lines }`; inject
+  replays via `buildClaudeFromRaw` when `raw.tool === "claude-code"` — every
+  line byte-identical except `sessionId`/`cwd` (so `message`/`uuid`/signed
+  thinking untouched), fresh fence root prepended.
+- `.cbctx` path already generic (claude native artifact + restore reuse existing
+  share/import; redactor already scrubs `raw.lines`).
+- `tests/smoke.test.mjs`: +1 test (claude native replay preserves the thinking
+  signature byte-for-byte).
+- `docs/LIMITATIONS.md`: §1.6 + §C corrected — claude→claude native now
+  preserves signed thinking; earlier "re-inject impossible" claim disproven.
+
+### Verification
+
+- Build clean, **56/56** pass. Claude session files DO store the 812-char
+  thinking `signature`.
+- Live: native-replayed a real thinking-bearing session, ran
+  `claude --print --resume <id> --model sonnet "..."` → **exit 0, no signature
+  rejection, correctly summarized the prior conversation.**
+- Caveat: proves the replayed file resumes & recalls context with signatures
+  intact; does not independently prove Claude re-validates ALL prior thinking
+  each turn. Cross-tool still drops thinking by design.
+
+### Note
+
+- Live test session left at `~/.claude/projects/C--Users-ddoon-Desktop-context-switching/f2f2e8f3-4145-44e1-ad53-1eb98164ab23.jsonl` (reusable for a live demo; delete to clean up).
+
+## 2026-06-03 - Codex (reasoning continuity wording)
+
+### Status
+
+Clarified the presentation and limitation wording around Codex reasoning,
+`/resume`, and how much context can realistically be restored.
+
+### Changed
+
+- Updated `docs/FINAL_PRESENTATION_NOTES.md` with a presentation-ready
+  distinction between recorded native reasoning artifacts and hidden model
+  runtime state.
+- Updated `docs/LIMITATIONS.md` to avoid the misleading blanket claim that all
+  reasoning is unrecoverable: Codex recorded reasoning items can be preserved in
+  same-tool native replay, while KV cache / hidden execution state still cannot.
+- Added decision D-0010 in `docs/DECISIONS.md`: optimize for practical task
+  continuity, not agent identity cloning.
+
+### Verification
+
+- Documentation-only change; no build/test run.
+
+## 2026-06-03 - Codex (final presentation prep)
+
+### Status
+
+Preserved the original midterm `docs/PRESENTATION_NOTES.md` and added
+`docs/FINAL_PRESENTATION_NOTES.md` for the final presentation narrative.
+
+### Changed
+
+- Restored `docs/PRESENTATION_NOTES.md` as the middle-presentation record.
+- Added final-presentation notes focused on what changed after the midterm:
+  bidirectional/tool-call-aware conversion, `.cbctx`, foreign-tool marking,
+  repo-state verification, same-tool Codex native replay, limitations, and the
+  Context Hub/provenance vision.
+- Left behavior-evaluation details out of this note because another teammate is
+  covering the evaluation section.
+- Added a final slide outline and Q&A section.
+
+### Verification
+
+- Documentation-only change; no build/test run after this edit.
+- Checked the final presentation notes for stale terms such as `harness`, old
+  test counts, and already-resolved limitations.
+
 ## 2026-06-03 - Codex (native preservation review follow-up)
 
 ### Status
