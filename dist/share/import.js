@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isCbctxPackage, computeCbctxContentHash, computeNativeContentHash, } from "../schema/cbctx.js";
+import { applyContextBudget, } from "../transform/budget.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 export async function readPackage(filePath) {
@@ -18,12 +19,12 @@ export async function readPackage(filePath) {
     return parsed;
 }
 /** Convert a CbctxPackage back into a NormalizedContext for the inject step. */
-export function packageToContext(pkg) {
+export function packageToContext(pkg, opts = {}) {
     // Restore the native artifact (when present and intact) so a same-tool
     // inject replays the original session verbatim. Untrusted data: only used
     // when its tool matches the source AND its hash verifies; otherwise we
     // silently fall back to the normalized `messages`.
-    const raw = restoreNativeRaw(pkg);
+    const raw = opts.useNative === false ? null : restoreNativeRaw(pkg);
     return {
         schemaVersion: "0.1",
         source: pkg.source,
@@ -90,6 +91,9 @@ export async function importPackage(filePath, target, opts = {}) {
             `Override with --skip-hash-verify ONLY if this is a trusted legacy package.`);
     }
     let ctx = packageToContext(pkg);
+    const budgetOptions = resolveImportBudgetOptions(opts);
+    const budgeted = applyContextBudget(ctx, budgetOptions);
+    ctx = budgeted.context;
     // Re-bucket the conversation under the receiver's cwd so target
     // adapters (Claude Code in particular, which keys session files by
     // <encoded-cwd>) drop it into the right project folder. Stash the
@@ -116,6 +120,10 @@ export async function importPackage(filePath, target, opts = {}) {
         repo: pkg.repo,
         redaction: pkg.redaction,
         doctor: pkg.doctor,
+        budget: pkg.budget,
+        importBudget: shouldReportImportBudget(budgeted.stats)
+            ? budgeted.stats
+            : undefined,
         messageCount: pkg.messages.length,
         hashStatus,
     };
@@ -169,6 +177,22 @@ export function formatImportSummary(s) {
     if (s.doctor) {
         lines.push(`  Doctor (at share time): ${s.doctor.status} ${s.doctor.score}/100`);
     }
+    if (s.budget) {
+        lines.push(`  Package budget: ${s.budget.mode}` +
+            (s.budget.sinceCompact ? " since-compact" : "") +
+            (s.budget.truncatedToolOutputs > 0
+                ? `, truncated ${s.budget.truncatedToolOutputs} tool outputs`
+                : "") +
+            (s.budget.nativeIncluded ? "" : ", no native artifact"));
+    }
+    if (s.importBudget) {
+        lines.push(`  Import budget: ` +
+            (s.importBudget.sinceCompact ? "since-compact, " : "") +
+            (s.importBudget.truncatedToolOutputs > 0
+                ? `truncated ${s.importBudget.truncatedToolOutputs} tool outputs, `
+                : "") +
+            (s.importBudget.nativeIncluded ? "native on" : "native off"));
+    }
     if (s.preflightStatus) {
         lines.push(`  Doctor (preflight on import): ${s.preflightStatus} ${s.preflightScore}/100`);
     }
@@ -181,5 +205,20 @@ export function formatImportSummary(s) {
         lines.push(`  Content hash: ${note}`);
     }
     return lines.join("\n") + "\n";
+}
+function resolveImportBudgetOptions(opts) {
+    const mode = opts.contextMode ?? "full";
+    return {
+        includeNative: opts.useNative ?? (mode === "slim" ? false : true),
+        sinceCompact: opts.sinceCompact ?? mode === "slim",
+        maxToolOutputChars: opts.maxToolOutputChars ?? (mode === "slim" ? 8000 : undefined),
+    };
+}
+function shouldReportImportBudget(stats) {
+    return (stats.sinceCompact ||
+        stats.droppedMessages > 0 ||
+        stats.droppedRawLines > 0 ||
+        stats.truncatedToolOutputs > 0 ||
+        !stats.nativeIncluded);
 }
 //# sourceMappingURL=import.js.map

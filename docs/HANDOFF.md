@@ -3,6 +3,27 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Codex (optional context budgeting)
+
+### Status
+
+Adding opt-in context-budget controls for `.cbctx` packages so long sessions can
+be shared/imported without changing the default fidelity-first behavior.
+
+### Changed
+
+- Added `--context-mode slim`, `--no-native`, `--since-compact`, and
+  `--max-tool-output-chars` for `share`.
+- Added the same budget controls for `.cbctx import`, so receivers can reduce an
+  existing package before injection.
+- Added a pure `transform/budget` layer that can drop native raw, trim to
+  post-compaction context, and truncate large tool outputs.
+- Added `.cbctx` `budget` metadata and documented the trade-off.
+
+### Verification
+
+- `npm test`: passed, **59/59** tests.
+
 ## 2026-06-03 - Claude Code (claude→claude native preservation + live signed-thinking test)
 
 ### Status

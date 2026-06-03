@@ -245,8 +245,10 @@ TodoWrite 계획 상태도 여전히 과거 이력으로만 남음(미구현).
   `reasoning` item은 같은 도구 native replay에서 보존 가능하며, 여기서 말하는
   한계는 파일 밖의 hidden/runtime state다.
 - **프롬프트 캐싱/추론 효율**: 네이티브 세션의 캐시 이점은 주입 세션에서 재현 안 됨.
-- **컨텍스트 윈도우 압박**: 현재 요약 없이 통째로 덤프 → 긴 이력이 타겟의
-  현재 지시·유효 컨텍스트를 밀어낼 수 있음(크기 가드 미정의).
+- **컨텍스트 윈도우 압박**: fidelity-first 기본값은 긴 tool output/native replay를
+  크게 보존하므로 타겟 context limit을 빨리 밀어낼 수 있음. 완화 옵션으로
+  `.cbctx` `--context-mode slim`, `--no-native`, `--since-compact`,
+  `--max-tool-output-chars`를 둔다. 단 이는 보존율을 낮추는 선택이다.
 - **프롬프트 인젝션 표면**: 주입 컨텍스트는 공격 표면. fence로 방어하지만
   fence 자체가 토큰·주의력을 먹고, 모델이 과거 명령형 텍스트를 지시로 오인할
   잔여 위험.

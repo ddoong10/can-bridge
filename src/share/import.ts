@@ -8,6 +8,10 @@ import {
   computeCbctxContentHash,
   computeNativeContentHash,
 } from "../schema/cbctx.js";
+import {
+  applyContextBudget,
+  type ContextBudgetStats,
+} from "../transform/budget.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 
@@ -30,6 +34,10 @@ export interface ImportPackageOptions {
    * importing a legacy package that pre-dates the field.
    */
   skipHashVerify?: boolean;
+  useNative?: boolean;
+  contextMode?: "full" | "slim";
+  sinceCompact?: boolean;
+  maxToolOutputChars?: number;
 }
 
 export interface ImportSummary {
@@ -37,6 +45,8 @@ export interface ImportSummary {
   repo?: CbctxPackage["repo"];
   redaction: CbctxPackage["redaction"];
   doctor?: CbctxPackage["doctor"];
+  budget?: CbctxPackage["budget"];
+  importBudget?: ContextBudgetStats;
   messageCount: number;
   preflightStatus?: "ok" | "warn" | "fail";
   preflightScore?: number;
@@ -64,12 +74,15 @@ export async function readPackage(filePath: string): Promise<CbctxPackage> {
 }
 
 /** Convert a CbctxPackage back into a NormalizedContext for the inject step. */
-export function packageToContext(pkg: CbctxPackage): NormalizedContext {
+export function packageToContext(
+  pkg: CbctxPackage,
+  opts: { useNative?: boolean } = {},
+): NormalizedContext {
   // Restore the native artifact (when present and intact) so a same-tool
   // inject replays the original session verbatim. Untrusted data: only used
   // when its tool matches the source AND its hash verifies; otherwise we
   // silently fall back to the normalized `messages`.
-  const raw = restoreNativeRaw(pkg);
+  const raw = opts.useNative === false ? null : restoreNativeRaw(pkg);
   return {
     schemaVersion: "0.1",
     source: pkg.source,
@@ -143,6 +156,9 @@ export async function importPackage(
   }
 
   let ctx = packageToContext(pkg);
+  const budgetOptions = resolveImportBudgetOptions(opts);
+  const budgeted = applyContextBudget(ctx, budgetOptions);
+  ctx = budgeted.context;
 
   // Re-bucket the conversation under the receiver's cwd so target
   // adapters (Claude Code in particular, which keys session files by
@@ -172,6 +188,10 @@ export async function importPackage(
     repo: pkg.repo,
     redaction: pkg.redaction,
     doctor: pkg.doctor,
+    budget: pkg.budget,
+    importBudget: shouldReportImportBudget(budgeted.stats)
+      ? budgeted.stats
+      : undefined,
     messageCount: pkg.messages.length,
     hashStatus,
   };
@@ -232,6 +252,26 @@ export function formatImportSummary(s: ImportSummary): string {
       `  Doctor (at share time): ${s.doctor.status} ${s.doctor.score}/100`,
     );
   }
+  if (s.budget) {
+    lines.push(
+      `  Package budget: ${s.budget.mode}` +
+        (s.budget.sinceCompact ? " since-compact" : "") +
+        (s.budget.truncatedToolOutputs > 0
+          ? `, truncated ${s.budget.truncatedToolOutputs} tool outputs`
+          : "") +
+        (s.budget.nativeIncluded ? "" : ", no native artifact"),
+    );
+  }
+  if (s.importBudget) {
+    lines.push(
+      `  Import budget: ` +
+        (s.importBudget.sinceCompact ? "since-compact, " : "") +
+        (s.importBudget.truncatedToolOutputs > 0
+          ? `truncated ${s.importBudget.truncatedToolOutputs} tool outputs, `
+          : "") +
+        (s.importBudget.nativeIncluded ? "native on" : "native off"),
+    );
+  }
   if (s.preflightStatus) {
     lines.push(
       `  Doctor (preflight on import): ${s.preflightStatus} ${s.preflightScore}/100`,
@@ -247,4 +287,26 @@ export function formatImportSummary(s: ImportSummary): string {
     lines.push(`  Content hash: ${note}`);
   }
   return lines.join("\n") + "\n";
+}
+
+function resolveImportBudgetOptions(
+  opts: ImportPackageOptions,
+): Parameters<typeof applyContextBudget>[1] {
+  const mode = opts.contextMode ?? "full";
+  return {
+    includeNative: opts.useNative ?? (mode === "slim" ? false : true),
+    sinceCompact: opts.sinceCompact ?? mode === "slim",
+    maxToolOutputChars:
+      opts.maxToolOutputChars ?? (mode === "slim" ? 8000 : undefined),
+  };
+}
+
+function shouldReportImportBudget(stats: ContextBudgetStats): boolean {
+  return (
+    stats.sinceCompact ||
+    stats.droppedMessages > 0 ||
+    stats.droppedRawLines > 0 ||
+    stats.truncatedToolOutputs > 0 ||
+    !stats.nativeIncluded
+  );
 }

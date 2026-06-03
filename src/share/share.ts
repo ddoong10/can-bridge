@@ -15,6 +15,11 @@ import {
   computeCbctxContentHash,
   computeNativeContentHash,
 } from "../schema/cbctx.js";
+import {
+  applyContextBudget,
+  type ContextBudgetOptions,
+  type ContextBudgetStats,
+} from "../transform/budget.js";
 import { redactContext } from "../transform/redactor.js";
 import { diagnoseSessionFromContext } from "../doctor/session-doctor.js";
 import { HARNESS_VERSION } from "../version.js";
@@ -25,6 +30,10 @@ export interface BuildPackageOptions {
   redact?: boolean;
   includeRepoRef?: boolean;
   includePatch?: boolean;
+  contextMode?: "full" | "slim";
+  includeNative?: boolean;
+  sinceCompact?: boolean;
+  maxToolOutputChars?: number;
   /** Working directory to inspect for git metadata. Defaults to source.cwd. */
   repoCwd?: string;
 }
@@ -49,6 +58,9 @@ export async function buildPackage(
   // package leaks them to receivers and lets a malicious sender hand-craft
   // arbitrary "thinking" payloads that bypass the recipient's reasoning.
   let working = stripThinkingBlocks(ctx);
+  const budgetOptions = resolveBudgetOptions(opts);
+  const budgeted = applyContextBudget(working, budgetOptions);
+  working = budgeted.context;
   let redaction: CbctxRedactionInfo = { enabled: false, findings: [] };
 
   if (opts.redact) {
@@ -89,7 +101,8 @@ export async function buildPackage(
   // Persist the verbatim native session so a same-tool import can restore it
   // far more faithfully than `messages` allow. `working.raw` was already
   // redacted upstream when --redact was set, so no unredacted secret leaks in.
-  const native = buildNativeArtifacts(working);
+  const native =
+    budgetOptions.includeNative === false ? [] : buildNativeArtifacts(working);
 
   const pkg: CbctxPackage = {
     schema: CBCTX_SCHEMA_V1,
@@ -98,6 +111,9 @@ export async function buildPackage(
     ...(working.summary ? { summary: working.summary } : {}),
     messages: working.messages,
     ...(native.length > 0 ? { native } : {}),
+    ...(shouldEmitBudgetInfo(budgeted.stats)
+      ? { budget: toPackageBudget(opts.contextMode ?? "full", budgeted.stats) }
+      : {}),
     redaction,
     ...(doctor ? { doctor } : {}),
     createdAt: new Date().toISOString(),
@@ -250,6 +266,45 @@ function buildNativeArtifacts(ctx: NormalizedContext): CbctxNativeArtifact[] {
       content,
     },
   ];
+}
+
+function resolveBudgetOptions(
+  opts: BuildPackageOptions,
+): ContextBudgetOptions {
+  const mode = opts.contextMode ?? "full";
+  return {
+    includeNative:
+      opts.includeNative ?? (mode === "slim" ? false : true),
+    sinceCompact: opts.sinceCompact ?? mode === "slim",
+    maxToolOutputChars:
+      opts.maxToolOutputChars ?? (mode === "slim" ? 8000 : undefined),
+  };
+}
+
+function shouldEmitBudgetInfo(stats: ContextBudgetStats): boolean {
+  return (
+    stats.sinceCompact ||
+    stats.droppedMessages > 0 ||
+    stats.droppedRawLines > 0 ||
+    stats.truncatedToolOutputs > 0 ||
+    !stats.nativeIncluded
+  );
+}
+
+function toPackageBudget(
+  mode: "full" | "slim",
+  stats: ContextBudgetStats,
+): NonNullable<import("../schema/cbctx.js").CbctxPackage["budget"]> {
+  return {
+    mode,
+    sinceCompact: stats.sinceCompact,
+    compactedAt: stats.compactedAt,
+    droppedMessages: stats.droppedMessages,
+    droppedRawLines: stats.droppedRawLines,
+    truncatedToolOutputs: stats.truncatedToolOutputs,
+    omittedToolOutputChars: stats.omittedToolOutputChars,
+    nativeIncluded: stats.nativeIncluded,
+  };
 }
 
 function stripThinkingBlocks(ctx: NormalizedContext): NormalizedContext {

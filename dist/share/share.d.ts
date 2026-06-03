@@ -4,6 +4,10 @@ export interface BuildPackageOptions {
     redact?: boolean;
     includeRepoRef?: boolean;
     includePatch?: boolean;
+    contextMode?: "full" | "slim";
+    includeNative?: boolean;
+    sinceCompact?: boolean;
+    maxToolOutputChars?: number;
     /** Working directory to inspect for git metadata. Defaults to source.cwd. */
     repoCwd?: string;
 }

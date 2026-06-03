@@ -103,12 +103,17 @@ async function main() {
             }
             // Auto-detect: .cbctx package vs raw NormalizedContext export.
             if (isCbctxPackage(parsed)) {
+                const contextMode = parseContextMode(args["context-mode"]);
                 const { result, summary } = await importPackage(inPath, target, {
                     skipDoctor: args["skip-doctor"] === true,
                     redactAdditional: args.redact === true,
                     keepSourceCwd: args["keep-source-cwd"] === true,
                     receiverCwd: typeof args.cwd === "string" ? args.cwd : undefined,
                     skipHashVerify: args["skip-hash-verify"] === true,
+                    contextMode,
+                    useNative: args["no-native"] === true ? false : undefined,
+                    sinceCompact: args["since-compact"] === true ? true : undefined,
+                    maxToolOutputChars: parseOptionalPositiveInteger(args, "max-tool-output-chars"),
                 });
                 process.stderr.write(formatImportSummary(summary));
                 console.error(`Injected to: ${result.locator}`);
@@ -144,10 +149,15 @@ async function main() {
                 throw new Error("share: provide --session <id> or --latest");
             }
             const ctx = await source.extract(sessionId);
+            const contextMode = parseContextMode(args["context-mode"]);
             const { pkg } = await buildPackage(ctx, {
                 redact: args.redact === true,
                 includeRepoRef: args["include-repo-ref"] === true || args["include-patch"] === true,
                 includePatch: args["include-patch"] === true,
+                contextMode,
+                includeNative: args["no-native"] === true ? false : undefined,
+                sinceCompact: args["since-compact"] === true ? true : undefined,
+                maxToolOutputChars: parseOptionalPositiveInteger(args, "max-tool-output-chars"),
                 repoCwd: typeof args.cwd === "string" ? args.cwd : undefined,
             });
             const outPath = typeof args.out === "string"
@@ -164,6 +174,13 @@ async function main() {
                             .join(", ") || "none observed"}`
                         : "") +
                     (pkg.repo ? `, repo: ${pkg.repo.commit?.slice(0, 12) ?? "ref"}` : "") +
+                    (pkg.budget
+                        ? `, context: ${pkg.budget.mode}` +
+                            (pkg.budget.nativeIncluded ? "" : "/no-native") +
+                            (pkg.budget.truncatedToolOutputs > 0
+                                ? `/truncated:${pkg.budget.truncatedToolOutputs}`
+                                : "")
+                        : "") +
                     ")");
                 console.error(``);
                 console.error(`Share this file with your friend.`);
@@ -459,6 +476,28 @@ function parsePositiveInteger(value, fallback) {
     }
     return parsed;
 }
+function parseOptionalPositiveInteger(args, key) {
+    const value = args[key];
+    if (value === undefined)
+        return undefined;
+    if (typeof value === "string") {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            throw new Error(`--${key} must be a positive integer (got "${value}")`);
+        }
+        return parsed;
+    }
+    throw new Error(`--${key} requires a positive integer`);
+}
+function parseContextMode(value) {
+    if (value === undefined)
+        return undefined;
+    if (value === true)
+        throw new Error("--context-mode requires full or slim");
+    if (value === "full" || value === "slim")
+        return value;
+    throw new Error(`--context-mode must be full or slim (got "${value}")`);
+}
 function formatUpdatedAt(value) {
     if (!value)
         return "unknown-time";
@@ -604,11 +643,16 @@ Commands:
   continue --from <source> --to <target> (--latest | --session <id>) [--redact] [--as-prompt]
   export --from <source> --session <id> [--out file.json] [--redact]
   import --to <target> --in file.{json,cbctx} [--redact] [--skip-doctor] [--skip-hash-verify]
+                         [--context-mode full|slim] [--no-native]
+                         [--since-compact] [--max-tool-output-chars n]
   pipe   --from <source> --session <id> --to <target> [--as-prompt] [--redact] [--verbose]
   list   --from <source> [--cwd [path]] [--limit n | --all] [--json]
   doctor --from <source> --session <id|path> [--json]
   share  --from <source> (--session <id> | --latest) [--redact] [--include-repo-ref]
-                         [--include-patch] [--out file.cbctx | --store stdout]
+                         [--include-patch] [--context-mode full|slim]
+                         [--no-native] [--since-compact]
+                         [--max-tool-output-chars n]
+                         [--out file.cbctx | --store stdout]
   mailbox <send|inbox|thread|all>
   eval   <run|score>
 
@@ -616,6 +660,10 @@ Flags:
   --redact   Mask common API keys (sk-, sk-ant-, gh*_, AKIA, AIza, xox*-),
              JWTs, Bearer tokens, and password=/token= values with
              [REDACTED:<kind>]. Opt-in.
+  --context-mode slim
+             Build/import a smaller portable context: omit native replay,
+             prefer messages after the latest compaction marker, and truncate
+             tool outputs to 8000 chars unless overridden.
 
 Sources: ${Object.keys(SOURCES).join(", ")}
 Targets: ${Object.keys(TARGETS).join(", ")}

@@ -93,3 +93,13 @@ runtime state such as KV cache, attention state, vendor hidden prompts, and
 unexported scratchpad reasoning is outside the product boundary. `/resume` is
 best understood as reloading persisted transcript/session records, not reviving
 a live model state.
+
+## D-0011 - Make Context Budgeting Explicit And Optional
+
+The default `.cbctx` path remains fidelity-first. Size-reduction behavior must
+be opt-in because it trades away evidence: dropping native artifacts, trimming
+to post-compaction history, and truncating tool outputs can make imports fit a
+target context window but reduce replay fidelity. Use `--context-mode slim` and
+the lower-level `--no-native`, `--since-compact`, and
+`--max-tool-output-chars` flags for portable handoffs that would otherwise hit
+context limits.

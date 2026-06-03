@@ -40,6 +40,8 @@ export interface CbctxPackage {
    * `messages`. Treated as untrusted data; each carries its own contentHash.
    */
   native?: CbctxNativeArtifact[];
+  /** Optional context-budgeting choices applied while building the package. */
+  budget?: CbctxBudgetInfo;
   /** What --redact stripped, surfaced so the receiver can audit. */
   redaction: CbctxRedactionInfo;
   /**
@@ -70,6 +72,19 @@ export interface CbctxNativeArtifact {
   contentHash: string;
   /** Verbatim native session (JSONL lines joined by "\n"). */
   content: string;
+}
+
+export interface CbctxBudgetInfo {
+  /** "full" preserves current fidelity-first behavior; "slim" favors importability. */
+  mode: "full" | "slim";
+  /** Whether the package kept only context after the latest source compaction. */
+  sinceCompact: boolean;
+  compactedAt?: string;
+  droppedMessages: number;
+  droppedRawLines: number;
+  truncatedToolOutputs: number;
+  omittedToolOutputChars: number;
+  nativeIncluded: boolean;
 }
 
 export interface CbctxRepoRef {

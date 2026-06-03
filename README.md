@@ -168,6 +168,25 @@ can-bridge share \
 Send `handoff.cbctx` over KakaoTalk, Slack, email, Discord, or any file
 transfer channel.
 
+If a long session imports with "context too long", build a smaller portable
+package instead of changing the default fidelity-first behavior:
+
+```bash
+can-bridge share \
+  --from codex --latest --redact \
+  --context-mode slim \
+  --out handoff-slim.cbctx
+```
+
+`--context-mode slim` omits same-tool native replay, prefers context after the
+latest source compaction marker when one exists, and truncates large tool
+outputs to 8000 chars. You can tune the pieces directly:
+
+```bash
+can-bridge share --from codex --latest --no-native --since-compact \
+  --max-tool-output-chars 12000 --out handoff.cbctx
+```
+
 **Receiver (any machine, any folder name, either tool):**
 
 The receiver should open or clone the same repository, but the absolute path
@@ -195,6 +214,14 @@ can-bridge import --to codex --in ~/Downloads/handoff.cbctx
 codex resume <printed-uuid>
 ```
 
+For an existing `.cbctx` that is too large on import, the receiver can also
+disable native replay or truncate normalized tool outputs during import:
+
+```bash
+can-bridge import --to codex --in ~/Downloads/handoff.cbctx --no-native
+can-bridge import --to codex --in ~/Downloads/handoff.cbctx --context-mode slim
+```
+
 Or import into Claude Code:
 
 ```bash
@@ -216,6 +243,9 @@ What goes in the `.cbctx` (`can-bridge.context.v1` schema):
 
 - `source` — which tool / model / sessionId / cwd the conversation came from
 - `messages` — normalized transcript (Anthropic-style blocks)
+- `native` (optional) — same-tool raw session artifact for higher fidelity
+- `budget` (optional) — context-budget choices such as slim mode, truncation,
+  and whether native replay was included
 - `redaction` — flags + per-kind counts of secrets that were masked
 - `repo` (opt-in) — git remote / branch / commit so the receiver can
   `git checkout` the same code state. Add `--include-patch` to bundle

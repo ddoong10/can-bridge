@@ -1,6 +1,7 @@
 import type { TargetAdapter, InjectionResult } from "../adapters/base.js";
 import type { NormalizedContext } from "../schema/context.js";
 import type { CbctxPackage } from "../schema/cbctx.js";
+import { type ContextBudgetStats } from "../transform/budget.js";
 export interface ImportPackageOptions {
     skipDoctor?: boolean;
     redactAdditional?: boolean;
@@ -20,12 +21,18 @@ export interface ImportPackageOptions {
      * importing a legacy package that pre-dates the field.
      */
     skipHashVerify?: boolean;
+    useNative?: boolean;
+    contextMode?: "full" | "slim";
+    sinceCompact?: boolean;
+    maxToolOutputChars?: number;
 }
 export interface ImportSummary {
     source: CbctxPackage["source"];
     repo?: CbctxPackage["repo"];
     redaction: CbctxPackage["redaction"];
     doctor?: CbctxPackage["doctor"];
+    budget?: CbctxPackage["budget"];
+    importBudget?: ContextBudgetStats;
     messageCount: number;
     preflightStatus?: "ok" | "warn" | "fail";
     preflightScore?: number;
@@ -35,7 +42,9 @@ export interface ImportSummary {
 }
 export declare function readPackage(filePath: string): Promise<CbctxPackage>;
 /** Convert a CbctxPackage back into a NormalizedContext for the inject step. */
-export declare function packageToContext(pkg: CbctxPackage): NormalizedContext;
+export declare function packageToContext(pkg: CbctxPackage, opts?: {
+    useNative?: boolean;
+}): NormalizedContext;
 /**
  * Read package, optionally re-redact, run preflight doctor, then inject.
  * Returns both the InjectionResult and a friendly summary the caller
