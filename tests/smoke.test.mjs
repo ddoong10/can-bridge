@@ -1,8 +1,25 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
+import { promises as fs, mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+
+// ─── Test isolation ────────────────────────────────────────────────
+// Adapters/doctor resolve their session store from CB_CLAUDE_HOME /
+// CB_CODEX_HOME at call time. Point both at a throwaway temp home BEFORE
+// any adapter method runs, so inject() never writes to — and never leaves
+// stray files in — the user's real ~/.claude and ~/.codex. Removed after
+// the whole suite finishes.
+const CB_TEST_HOME = mkdtempSync(path.join(os.tmpdir(), "can-bridge-test-home-"));
+process.env.CB_CLAUDE_HOME = path.join(CB_TEST_HOME, "claude");
+process.env.CB_CODEX_HOME = path.join(CB_TEST_HOME, "codex");
+after(() => {
+  try {
+    rmSync(CB_TEST_HOME, { recursive: true, force: true });
+  } catch {
+    /* best-effort cleanup */
+  }
+});
 import { ClaudeCodeAdapter } from "../dist/adapters/claude-code.js";
 import { CodexAdapter } from "../dist/adapters/codex.js";
 import {
@@ -1342,7 +1359,8 @@ test("Codex extract strips a leading fence so summary doesn't pile up", async ()
 
 test("Claude Code resolve throws on ambiguous session id", async () => {
   const adapter = new ClaudeCodeAdapter();
-  const projects = path.join(os.homedir(), ".claude", "projects");
+  // Use the isolated test home (set at top), not the user's real ~/.claude.
+  const projects = path.join(process.env.CB_CLAUDE_HOME, "projects");
   const dirA = path.join(projects, "test-ambiguous-A");
   const dirB = path.join(projects, "test-ambiguous-B");
   await fs.mkdir(dirA, { recursive: true });

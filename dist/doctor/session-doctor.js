@@ -1,8 +1,17 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
-const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
+// Resolve home dirs at call time so `CB_CLAUDE_HOME` / `CB_CODEX_HOME`
+// (used by tests and sandboxed runs) redirect reads away from the user's
+// real sessions, consistent with the adapters.
+function claudeProjectsDir() {
+    const home = process.env.CB_CLAUDE_HOME ?? path.join(os.homedir(), ".claude");
+    return path.join(home, "projects");
+}
+function codexSessionsDir() {
+    const home = process.env.CB_CODEX_HOME ?? path.join(os.homedir(), ".codex");
+    return path.join(home, "sessions");
+}
 const CLAUDE_TYPES = new Set([
     "user",
     "assistant",
@@ -235,14 +244,14 @@ function looksLikePath(locator) {
 async function findClaudeSession(id) {
     let projectDirs;
     try {
-        projectDirs = await fs.readdir(CLAUDE_PROJECTS_DIR);
+        projectDirs = await fs.readdir(claudeProjectsDir());
     }
     catch {
         return null;
     }
     const matches = [];
     for (const dir of projectDirs) {
-        const candidate = path.join(CLAUDE_PROJECTS_DIR, dir, `${id}.jsonl`);
+        const candidate = path.join(claudeProjectsDir(), dir, `${id}.jsonl`);
         try {
             await fs.access(candidate);
             matches.push(candidate);
@@ -262,7 +271,7 @@ async function findClaudeSession(id) {
 }
 async function findCodexRollout(id) {
     const matches = [];
-    await walkRollouts(CODEX_SESSIONS_DIR, async (file, fullPath) => {
+    await walkRollouts(codexSessionsDir(), async (file, fullPath) => {
         if (file.includes(id))
             matches.push(fullPath);
     });

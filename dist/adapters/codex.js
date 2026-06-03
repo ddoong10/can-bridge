@@ -29,7 +29,18 @@ import { UNTRUSTED_FENCE_HEADER, stripFence } from "../transform/fence.js";
  *
  *   {timestamp, type:"turn_context", payload:{model, reasoning_effort, ...}}
  */
-const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
+/**
+ * Resolve the Codex home dir at call time. `CB_CODEX_HOME` overrides the
+ * default `~/.codex` so tests (and sandboxed runs) redirect all reads/writes
+ * to a temp dir instead of polluting the user's real rollouts. Read at call
+ * time so a test can set the env var after importing the adapter.
+ */
+function codexHome() {
+    return process.env.CB_CODEX_HOME ?? path.join(os.homedir(), ".codex");
+}
+function codexSessionsDir() {
+    return path.join(codexHome(), "sessions");
+}
 export class CodexAdapter {
     id = "codex";
     // ─── SourceAdapter ────────────────────────────────────────────────
@@ -92,7 +103,7 @@ export class CodexAdapter {
     }
     async listSessions() {
         const out = [];
-        await walkRollouts(CODEX_SESSIONS_DIR, async (file, stat, fullPath) => {
+        await walkRollouts(codexSessionsDir(), async (file, stat, fullPath) => {
             const m = file.match(/-([0-9a-f-]{36})\.jsonl$/i);
             if (m && m[1]) {
                 out.push({
@@ -111,12 +122,12 @@ export class CodexAdapter {
         if (locator.endsWith(".jsonl"))
             return locator;
         const matches = [];
-        await walkRollouts(CODEX_SESSIONS_DIR, async (file, _stat, fullPath) => {
+        await walkRollouts(codexSessionsDir(), async (file, _stat, fullPath) => {
             if (file.includes(locator))
                 matches.push(fullPath);
         });
         if (matches.length === 0) {
-            throw new Error(`Could not find Codex rollout for "${locator}" under ${CODEX_SESSIONS_DIR}`);
+            throw new Error(`Could not find Codex rollout for "${locator}" under ${codexSessionsDir()}`);
         }
         if (matches.length > 1) {
             throw new Error(`Ambiguous Codex rollout id "${locator}": matched ${matches.length} files. ` +
@@ -131,7 +142,7 @@ export class CodexAdapter {
         const yyyy = String(now.getUTCFullYear());
         const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
         const dd = String(now.getUTCDate()).padStart(2, "0");
-        const dir = path.join(CODEX_SESSIONS_DIR, yyyy, mm, dd);
+        const dir = path.join(codexSessionsDir(), yyyy, mm, dd);
         await fs.mkdir(dir, { recursive: true });
         const sessionId = crypto.randomUUID();
         const ts = now.toISOString().replace(/[:.]/g, "-");
@@ -172,7 +183,9 @@ export class CodexAdapter {
         };
     }
 }
-const CODEX_STATE_DB = path.join(os.homedir(), ".codex", "state_5.sqlite");
+function codexStateDb() {
+    return path.join(codexHome(), "state_5.sqlite");
+}
 async function tryRegisterCodexThread(opts) {
     // node:sqlite is built-in but requires --experimental-sqlite on Node 22.x
     // (stable on Node 23+). If the import fails for any reason — flag missing,
@@ -189,14 +202,14 @@ async function tryRegisterCodexThread(opts) {
         };
     }
     try {
-        await fs.access(CODEX_STATE_DB);
+        await fs.access(codexStateDb());
     }
     catch {
         return { ok: false, error: "state_5.sqlite not found (codex never run on this machine?)" };
     }
     let db;
     try {
-        db = new DatabaseSync(CODEX_STATE_DB);
+        db = new DatabaseSync(codexStateDb());
         const cwd = opts.context.source.cwd ?? process.cwd();
         const firstUser = findFirstUserText(opts.context) ?? "";
         const title = firstUser.slice(0, 200);

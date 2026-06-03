@@ -23,7 +23,17 @@ import { UNTRUSTED_FENCE_HEADER } from "../transform/fence.js";
  * One assistant turn can be split across multiple JSONL lines that share
  * `message.id`. The extractor coalesces them by id.
  */
-const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
+/**
+ * Resolve the Claude home dir at call time. `CB_CLAUDE_HOME` overrides the
+ * default `~/.claude` so tests (and sandboxed runs) can redirect all reads
+ * and writes to a temp dir instead of polluting the user's real sessions.
+ * Read at call time — not import time — so a test can set the env var after
+ * importing the adapter.
+ */
+function claudeProjectsDir() {
+    const home = process.env.CB_CLAUDE_HOME ?? path.join(os.homedir(), ".claude");
+    return path.join(home, "projects");
+}
 const IGNORED_TYPES = new Set([
     "permission-mode",
     "attachment",
@@ -209,13 +219,13 @@ export class ClaudeCodeAdapter {
         const out = [];
         let projectDirs;
         try {
-            projectDirs = await fs.readdir(CLAUDE_PROJECTS_DIR);
+            projectDirs = await fs.readdir(claudeProjectsDir());
         }
         catch {
             return out;
         }
         for (const dir of projectDirs) {
-            const full = path.join(CLAUDE_PROJECTS_DIR, dir);
+            const full = path.join(claudeProjectsDir(), dir);
             let entries;
             try {
                 entries = await fs.readdir(full);
@@ -243,10 +253,10 @@ export class ClaudeCodeAdapter {
         }
         if (locator.endsWith(".jsonl"))
             return locator;
-        const projectDirs = await fs.readdir(CLAUDE_PROJECTS_DIR);
+        const projectDirs = await fs.readdir(claudeProjectsDir());
         const matches = [];
         for (const dir of projectDirs) {
-            const candidate = path.join(CLAUDE_PROJECTS_DIR, dir, `${locator}.jsonl`);
+            const candidate = path.join(claudeProjectsDir(), dir, `${locator}.jsonl`);
             try {
                 await fs.access(candidate);
                 matches.push(candidate);
@@ -256,7 +266,7 @@ export class ClaudeCodeAdapter {
             }
         }
         if (matches.length === 0) {
-            throw new Error(`Could not find Claude Code session "${locator}" under ${CLAUDE_PROJECTS_DIR}`);
+            throw new Error(`Could not find Claude Code session "${locator}" under ${claudeProjectsDir()}`);
         }
         if (matches.length > 1) {
             throw new Error(`Ambiguous Claude Code session id "${locator}": matched ${matches.length} files. ` +
@@ -269,7 +279,7 @@ export class ClaudeCodeAdapter {
     async inject(context) {
         const cwd = context.source.cwd ?? process.cwd();
         const folder = cwdToProjectFolder(cwd);
-        const dir = path.join(CLAUDE_PROJECTS_DIR, folder);
+        const dir = path.join(claudeProjectsDir(), folder);
         await fs.mkdir(dir, { recursive: true });
         const sessionId = crypto.randomUUID();
         const filePath = path.join(dir, `${sessionId}.jsonl`);

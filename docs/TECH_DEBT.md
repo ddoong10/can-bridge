@@ -9,7 +9,15 @@
 
 ## P0 — 지금 당장 위험
 
-### P0-1. 테스트가 사용자의 *실제* 세션 저장소에 쓴다 (비격리)
+### P0-1. 테스트가 사용자의 *실제* 세션 저장소에 쓴다 (비격리) — ✅ 해결됨
+**수정**: 어댑터·doctor가 홈 경로를 **호출 시점에 env에서 해석**하도록 변경
+(`CB_CLAUDE_HOME`/`CB_CODEX_HOME`, 미설정 시 `~/.claude`·`~/.codex`). 테스트는
+시작 시 `mkdtemp`로 임시 홈을 만들어 두 env에 주입하고 종료 시 제거 → 모든
+inject가 temp에만 씀. 실제 홈에 픽스처를 쓰던 "ambiguous id" 테스트도 temp로
+이전. **44/44 통과**. (읽기 전용 헬퍼 2곳은 실데이터 있으면 파싱 검증, 없으면
+skip — 오염 아님.)
+
+<details><summary>원래 문제(기록 보존)</summary>
 - `tests/smoke.test.mjs`의 inject 계열 테스트(7곳: L156/414/559/618/660/706/1261)가
   `adapter.inject()`를 호출 → **실제 `~/.codex/sessions/...` 와 `~/.claude/projects/...`
   에 파일을 씀**. 정리는 `fs.unlink(result.locator)`에 의존하므로 **테스트가
@@ -19,8 +27,11 @@
 - **영향**: 사용자 데이터 오염, 로컬/sandbox에서 빨간 실패, CI와 로컬 결과 불일치.
 - **수정**: inject 대상 루트를 env(`CB_CLAUDE_HOME`/`CB_CODEX_HOME`)로 주입 가능하게
   하고 테스트는 `mkdtemp`로 격리. 실데이터 의존 read 테스트는 합성 fixture로 대체.
+</details>
 
-### P0-2. `*.cbctx`가 .gitignore에 없고 2.7MB 덤프가 루트에 방치됨
+### P0-2. `*.cbctx`가 .gitignore에 없고 2.7MB 덤프가 루트에 방치됨 — ✅ 해결됨
+(커밋 `c029809`: `.gitignore`에 `*.cbctx` 추가 + `handoff.cbctx` 제거.)
+
 - `handoff.cbctx`(**2.68 MB**)가 working tree 루트에 untracked로 존재.
 - `.gitignore`에 `*.cbctx` **없음** → `git add .` 한 번이면 커밋됨.
 - `.cbctx`는 **전체 컨텍스트 + dirty patch 덤프**다. redaction은 opt-in(기본 off)
