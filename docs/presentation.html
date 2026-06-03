@@ -80,9 +80,16 @@
   .ceil .gone b{color:var(--warn)}
 
   /* comparison table */
+  .dim{color:var(--text2)}
   table.cmp{width:100%; border-collapse:collapse; margin-top:1.5vh; font-size:1.4vw}
   table.cmp th, table.cmp td{padding:1.5vh 1.1vw; border-bottom:1px solid var(--line); text-align:left}
   table.cmp th{color:var(--accent); font-size:1.15vw; letter-spacing:.04em; text-transform:uppercase}
+  table.cmp.dense{font-size:1.08vw; margin-top:1vh}
+  table.cmp.dense th, table.cmp.dense td{padding:.95vh .9vw}
+  table.cmp.dense th{font-size:.95vw}
+  table.cmp.dense td:nth-child(2){color:var(--ok)}
+  table.cmp.dense td:nth-child(3){color:var(--warn)}
+  table.cmp.dense td:nth-child(4){color:var(--text2)}
   table.cmp td .y{color:var(--ok); font-weight:700}
   table.cmp td .n{color:var(--warn); font-weight:700}
   table.cmp tr.no td{color:var(--text2)}
@@ -200,18 +207,23 @@
 
   <!-- 9 한계2 -->
   <section class="slide">
-    <div class="kicker warn">한계 ② · 모델이 다를 때</div>
-    <h2>정확히 무엇이 안 되나 <span style="font-size:.6em;color:var(--text2)">(도구셋을 직접 비교)</span></h2>
-    <table class="cmp">
-      <tr><th>기능</th><th>Claude Code</th><th>Codex</th><th></th></tr>
-      <tr><td>셸 실행</td><td><code>Bash</code></td><td><code>shell_command</code></td><td><span class="y">기능 겹침</span></td></tr>
-      <tr><td>파일 수정</td><td><code>Edit</code>/<code>Write</code></td><td><code>apply_patch</code></td><td><span class="y">기능 겹침(근사)</span></td></tr>
-      <tr class="no"><td>서브에이전트</td><td><code>Task</code></td><td>—</td><td><span class="n">대응 없음</span></td></tr>
-      <tr class="no"><td>확장 도구</td><td><code>mcp__*</code></td><td>대부분 —</td><td><span class="n">대응 없음</span></td></tr>
+    <div class="kicker warn">한계 ② · 모델·도구가 다를 때</div>
+    <h2>무엇이 안 되나 — 한눈에</h2>
+    <div style="font-size:1.4vw;color:var(--text2);margin-bottom:.5vh">
+      기록은 옮긴다 · <strong style="color:var(--text)">native 실행 상태로의 변환은 안 된다</strong></div>
+    <table class="cmp dense">
+      <tr><th>영역</th><th>✅ 옮긴다</th><th>❌ 안 된다</th><th>완화</th></tr>
+      <tr><td>도구 호출 <span class="dim">(Bash·Edit…)</span></td><td>명령·인자·결과</td><td>native 도구로 재실행 변환</td><td>안전한 것만 매핑</td></tr>
+      <tr><td>추론 <span class="dim">(thinking)</span></td><td>같은 벤더 원본</td><td>교차 벤더 변환(서명)</td><td>같은 도구 왕복만</td></tr>
+      <tr><td>지시 체계</td><td>힌트·preamble</td><td>instruction hierarchy 복제</td><td>source 메타·경고</td></tr>
+      <tr><td>MCP/외부 도구</td><td>호출·입력·결과</td><td>인증·권한·실시간 상태</td><td>필요도구 목록 <span class="dim">(future)</span></td></tr>
+      <tr><td>active UI <span class="dim">(todo/plan)</span></td><td>계획 내용</td><td>활성 UI로 복원</td><td>도구별 처리 <span class="dim">(future)</span></td></tr>
+      <tr><td>분기 대화</td><td>최신 갈래</td><td>전체 가지 구조</td><td>branch graph <span class="dim">(future)</span></td></tr>
+      <tr><td>첨부·이미지</td><td>텍스트</td><td>이미지·구조 복원</td><td>artifact 섹션 <span class="dim">(future)</span></td></tr>
+      <tr><td>벤더 전용 라인</td><td>같은 도구 raw</td><td>cross-tool 보존</td><td>의도된 설계</td></tr>
     </table>
-    <div class="note">겹쳐도 인자·동작이 달라 <b>자동 변환은 위험</b> → 매핑 대신 "과거 기록"으로 표시.
-      그 외: <b>추론 표현이 벤더 전용</b>(서명) · <b>지시 체계 다름</b>(CLAUDE.md↔AGENTS.md) ·
-      <b>같은 텍스트라도 모델마다 행동이 달라 이후 전개가 갈린다</b>.</div>
+    <div class="note">예: <code>Bash</code>↔<code>shell_command</code>, <code>Edit/Write</code>↔<code>apply_patch</code>는
+      기능이 겹치지만 인자·동작이 달라 <b>자동 변환은 위험</b> → 매핑 대신 "과거 기록"으로 표시.</div>
   </section>
 
   <!-- 10 OPEN SOURCE -->
