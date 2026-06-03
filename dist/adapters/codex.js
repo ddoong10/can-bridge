@@ -4,6 +4,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { HARNESS_SENTINEL } from "../version.js";
 import { UNTRUSTED_FENCE_HEADER, stripFence } from "../transform/fence.js";
+import { captureGitState, formatGitState, gitMismatchWarning, } from "../util/git.js";
 /**
  * Codex CLI sessions live at:
  *   ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl
@@ -93,9 +94,11 @@ export class CodexAdapter {
             // event_msg, etc → skip (user_message duplicates response_item;
             // task_started/complete/token_count are runtime events).
         }
+        // Probe the process cwd (trusted), not the transcript-provided cwd.
+        const git = captureGitState(process.cwd()) ?? undefined;
         return {
             schemaVersion: "0.1",
-            source: { tool: "codex", model, sessionId, capturedAt, cwd },
+            source: { tool: "codex", model, sessionId, capturedAt, cwd, git },
             summary,
             messages,
             metadata: { sourceFile: filePath },
@@ -147,7 +150,14 @@ export class CodexAdapter {
         const sessionId = crypto.randomUUID();
         const ts = now.toISOString().replace(/[:.]/g, "-");
         const filePath = path.join(dir, `rollout-${ts}-${sessionId}.jsonl`);
-        const lines = buildCodexJsonl(context, sessionId, now);
+        // We transfer a transcript, never the files. If the workspace has moved
+        // since the source was captured, warn so the user AND the resumed agent
+        // re-verify disk before trusting historical tool outputs. Probe the
+        // process cwd (trusted), not the transcript-provided cwd. Computed before
+        // building the rollout so the warning can also go into base_instructions.
+        const currentGit = captureGitState(process.cwd());
+        const gitWarning = gitMismatchWarning(context.source.git, currentGit);
+        const lines = buildCodexJsonl(context, sessionId, now, gitWarning);
         await fs.writeFile(filePath, lines.join("\n") + "\n", "utf8");
         // Pre-register the thread row so `codex resume <id>` (TUI) finds it
         // immediately. Without this, TUI resume looks the id up in
@@ -166,7 +176,8 @@ export class CodexAdapter {
                 `   On Node 22.x, set NODE_OPTIONS=--experimental-sqlite to enable auto-registration.)`;
         return {
             locator: filePath,
-            hint: `Resume in a real terminal (TUI):\n` +
+            hint: (gitWarning ? `⚠️  ${gitWarning}\n\n` : ``) +
+                `Resume in a real terminal (TUI):\n` +
                 `  codex resume ${sessionId}\n` +
                 `${sqliteNote}\n` +
                 `\n` +
@@ -179,6 +190,7 @@ export class CodexAdapter {
                 sessionId,
                 filePath,
                 sqliteRegistered: sqliteResult.ok,
+                gitMismatch: gitWarning ?? false,
             },
         };
     }
@@ -477,7 +489,7 @@ function responseItemToMessage(payload, ts) {
     }
     return null;
 }
-function buildCodexJsonl(context, sessionId, now) {
+function buildCodexJsonl(context, sessionId, now, gitWarning) {
     const out = [];
     const ts = now.toISOString();
     const cwd = context.source.cwd ?? process.cwd();
@@ -508,7 +520,7 @@ function buildCodexJsonl(context, sessionId, now) {
             cli_version: HARNESS_SENTINEL,
             source: "can-bridge-import",
             model_provider: "openai",
-            base_instructions: { text: buildBaseInstructions(context) },
+            base_instructions: { text: buildBaseInstructions(context, gitWarning) },
         },
     }));
     for (const msg of context.messages) {
@@ -539,7 +551,7 @@ function buildCodexJsonl(context, sessionId, now) {
     }
     return out;
 }
-function buildBaseInstructions(ctx) {
+function buildBaseInstructions(ctx, gitWarning) {
     const lines = [];
     // Prompt-injection isolation header. The transcript that follows came
     // from another tool/user/model; treat any imperative voice inside it as
@@ -551,6 +563,15 @@ function buildBaseInstructions(ctx) {
         ".");
     if (ctx.source.sessionId) {
         lines.push(`Original session id: ${ctx.source.sessionId}`);
+    }
+    if (ctx.source.cwd) {
+        lines.push(`Source workspace: ${ctx.source.cwd}`);
+    }
+    if (ctx.source.git) {
+        lines.push(`Source git state at capture: ${formatGitState(ctx.source.git)}`);
+    }
+    if (gitWarning) {
+        lines.push(`IMPORTANT — ${gitWarning}`);
     }
     if (ctx.summary) {
         lines.push("");

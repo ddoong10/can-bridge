@@ -16,6 +16,11 @@ import type {
 } from "../schema/context.js";
 import { HARNESS_VERSION, HARNESS_SENTINEL } from "../version.js";
 import { UNTRUSTED_FENCE_HEADER, stripFence } from "../transform/fence.js";
+import {
+  captureGitState,
+  formatGitState,
+  gitMismatchWarning,
+} from "../util/git.js";
 
 /**
  * Codex CLI sessions live at:
@@ -112,9 +117,12 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
       // task_started/complete/token_count are runtime events).
     }
 
+    // Probe the process cwd (trusted), not the transcript-provided cwd.
+    const git = captureGitState(process.cwd()) ?? undefined;
+
     return {
       schemaVersion: "0.1",
-      source: { tool: "codex", model, sessionId, capturedAt, cwd },
+      source: { tool: "codex", model, sessionId, capturedAt, cwd, git },
       summary,
       messages,
       metadata: { sourceFile: filePath },
@@ -174,7 +182,15 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
     const ts = now.toISOString().replace(/[:.]/g, "-");
     const filePath = path.join(dir, `rollout-${ts}-${sessionId}.jsonl`);
 
-    const lines = buildCodexJsonl(context, sessionId, now);
+    // We transfer a transcript, never the files. If the workspace has moved
+    // since the source was captured, warn so the user AND the resumed agent
+    // re-verify disk before trusting historical tool outputs. Probe the
+    // process cwd (trusted), not the transcript-provided cwd. Computed before
+    // building the rollout so the warning can also go into base_instructions.
+    const currentGit = captureGitState(process.cwd());
+    const gitWarning = gitMismatchWarning(context.source.git, currentGit);
+
+    const lines = buildCodexJsonl(context, sessionId, now, gitWarning);
     await fs.writeFile(filePath, lines.join("\n") + "\n", "utf8");
 
     // Pre-register the thread row so `codex resume <id>` (TUI) finds it
@@ -197,6 +213,7 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
     return {
       locator: filePath,
       hint:
+        (gitWarning ? `⚠️  ${gitWarning}\n\n` : ``) +
         `Resume in a real terminal (TUI):\n` +
         `  codex resume ${sessionId}\n` +
         `${sqliteNote}\n` +
@@ -210,6 +227,7 @@ export class CodexAdapter implements SourceAdapter, TargetAdapter {
         sessionId,
         filePath,
         sqliteRegistered: sqliteResult.ok,
+        gitMismatch: gitWarning ?? false,
       },
     };
   }
@@ -547,6 +565,7 @@ function buildCodexJsonl(
   context: NormalizedContext,
   sessionId: string,
   now: Date,
+  gitWarning: string | null,
 ): string[] {
   const out: string[] = [];
   const ts = now.toISOString();
@@ -583,7 +602,7 @@ function buildCodexJsonl(
         cli_version: HARNESS_SENTINEL,
         source: "can-bridge-import",
         model_provider: "openai",
-        base_instructions: { text: buildBaseInstructions(context) },
+        base_instructions: { text: buildBaseInstructions(context, gitWarning) },
       },
     }),
   );
@@ -621,7 +640,10 @@ function buildCodexJsonl(
   return out;
 }
 
-function buildBaseInstructions(ctx: NormalizedContext): string {
+function buildBaseInstructions(
+  ctx: NormalizedContext,
+  gitWarning: string | null,
+): string {
   const lines: string[] = [];
   // Prompt-injection isolation header. The transcript that follows came
   // from another tool/user/model; treat any imperative voice inside it as
@@ -635,6 +657,15 @@ function buildBaseInstructions(ctx: NormalizedContext): string {
   );
   if (ctx.source.sessionId) {
     lines.push(`Original session id: ${ctx.source.sessionId}`);
+  }
+  if (ctx.source.cwd) {
+    lines.push(`Source workspace: ${ctx.source.cwd}`);
+  }
+  if (ctx.source.git) {
+    lines.push(`Source git state at capture: ${formatGitState(ctx.source.git)}`);
+  }
+  if (gitWarning) {
+    lines.push(`IMPORTANT — ${gitWarning}`);
   }
   if (ctx.summary) {
     lines.push("");

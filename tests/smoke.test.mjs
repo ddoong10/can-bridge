@@ -59,6 +59,11 @@ import {
   stripFence,
 } from "../dist/transform/fence.js";
 import { HARNESS_SENTINEL, HARNESS_VERSION } from "../dist/version.js";
+import {
+  captureGitState,
+  formatGitState,
+  gitMismatchWarning,
+} from "../dist/util/git.js";
 
 const SAMPLE_SESSION_DIR = path.join(
   os.homedir(),
@@ -781,6 +786,64 @@ test("CodexAdapter inject marks foreign (non-Codex) tool names and round-trips t
     .find((b) => b.type === "tool_use");
   assert.equal(tu.name, "Read", "round-trip must recover the original tool name");
 
+  await fs.unlink(result.locator).catch(() => {});
+});
+
+test("gitMismatchWarning: commit/dirty/verify logic", () => {
+  const src = { branch: "main", commit: "aaaaaaa", dirty: false };
+  // Same commit + same dirty → no warning.
+  assert.equal(
+    gitMismatchWarning(src, { branch: "main", commit: "aaaaaaa", dirty: false }),
+    null,
+  );
+  // Different commit → warning.
+  assert.match(
+    gitMismatchWarning(src, { branch: "main", commit: "bbbbbbb" }) ?? "",
+    /Workspace moved/,
+  );
+  // Branch-only difference at the SAME commit → no warning (tree identical;
+  // also covers a detached-HEAD capture resumed on a named branch).
+  assert.equal(
+    gitMismatchWarning(
+      { commit: "aaaaaaa", dirty: false },
+      { branch: "main", commit: "aaaaaaa", dirty: false },
+    ),
+    null,
+  );
+  // Dirty flag changed at the same commit → warning.
+  assert.match(
+    gitMismatchWarning(src, { branch: "main", commit: "aaaaaaa", dirty: true }) ?? "",
+    /Workspace moved/,
+  );
+  // No source snapshot → nothing to compare.
+  assert.equal(gitMismatchWarning(undefined, { commit: "x" }), null);
+  // Had a source snapshot but cannot read the target → "could not verify".
+  assert.match(gitMismatchWarning(src, null) ?? "", /Could not verify/);
+  assert.equal(formatGitState(src), "main @ aaaaaaa");
+  assert.equal(formatGitState({ branch: "x", commit: "y", dirty: true }), "x @ y (dirty)");
+  assert.equal(formatGitState({ commit: "z" }), "@ z");
+});
+
+test("CodexAdapter inject embeds the source git snapshot in base instructions", async () => {
+  const norm = {
+    schemaVersion: "0.1",
+    source: {
+      tool: "claude-code",
+      cwd: process.cwd(),
+      git: { branch: "feature-x", commit: "deadbee", dirty: true },
+    },
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+  };
+  const codex = new CodexAdapter();
+  const result = await codex.inject(norm);
+  const raw = await fs.readFile(result.locator, "utf8");
+  const meta = JSON.parse(raw.split("\n").find((l) => l.includes("session_meta")));
+  assert.match(
+    meta.payload.base_instructions.text,
+    /Source git state at capture: feature-x @ deadbee \(dirty\)/,
+  );
+  // gitMismatch is exposed for programmatic callers (string when moved, else false).
+  assert.ok("gitMismatch" in result.details);
   await fs.unlink(result.locator).catch(() => {});
 });
 

@@ -4,6 +4,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { HARNESS_SENTINEL } from "../version.js";
 import { UNTRUSTED_FENCE_HEADER } from "../transform/fence.js";
+import { captureGitState } from "../util/git.js";
 /**
  * Claude Code stores each session as a JSONL file at:
  *   ~/.claude/projects/<project-folder>/<session-uuid>.jsonl
@@ -86,6 +87,10 @@ export class ClaudeCodeAdapter {
                 msg: entry.message,
             });
         }
+        // Best-effort git snapshot of the workspace at export time. We probe the
+        // process cwd (trusted) — never the transcript-provided cwd, which could
+        // come from an imported/foreign session.
+        const git = captureGitState(process.cwd()) ?? undefined;
         // Phase 2 — pick out the message-bearing entries.
         const messageEntries = [];
         for (const e of byUuid.values()) {
@@ -106,6 +111,7 @@ export class ClaudeCodeAdapter {
                     sessionId,
                     capturedAt: firstTimestamp,
                     cwd,
+                    git,
                 },
                 messages: [],
                 metadata: { sourceFile: filePath },
@@ -210,6 +216,7 @@ export class ClaudeCodeAdapter {
                 sessionId,
                 capturedAt: firstTimestamp,
                 cwd,
+                git,
             },
             messages: orderedMessages,
             metadata: { sourceFile: filePath },

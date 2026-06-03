@@ -197,11 +197,21 @@ Codex `developer` role(권한·협업모드 preamble)은 normalized `system`으�
 접힌 뒤 Claude inject에서 다시 처리 → 운영적 의미(지시 우선순위)가 1:1로
 보존되지 않음.
 
-### 2.7 과거 파일 편집은 재현되지 않는다 (stale state)
+### 2.7 과거 파일 편집은 재현되지 않는다 (stale state) — ⚠️ 완화됨
 과거 Claude `Edit` 결과가 "파일 바꿈"이라 해도 Codex는 디스크를 직접 봐야
-한다. 그 사이 파일이 다르거나 없을 수 있다. cwd/branch/commit/dirty 상태를
-우리가 안 잡으므로 **불일치 경고도 못 준다**. TodoWrite 계획 상태도 라이브로
-이어지지 않고 과거 이력으로만 남는다.
+한다. 그 사이 파일이 다르거나 없을 수 있다.
+
+**완화(구현됨)** — repo state 검증:
+- **extract**가 source `cwd`의 git 상태(branch·short commit·dirty)를 best-effort로
+  캡처(`src/util/git.ts`, 비-git/타임아웃 시 graceful null) → `source.git`.
+- **codex inject**가 base_instructions에 "Source workspace / Source git state at
+  capture" 스냅샷을 넣어 resumed agent가 출처 상태를 인지.
+- inject 시 **현재 타겟 cwd의 git과 비교**해 commit/branch가 다르면 hint에
+  `⚠️ Workspace moved since capture …` 경고 + `details.gitMismatch` 노출.
+- 회귀 테스트 2개(불일치 로직·스냅샷). 라이브: `main @ 5f4c76a (dirty)` 캡처 확인.
+
+**남는 한계**: 상태 *전이*가 아니라 *불일치 알림*일 뿐. 파일 내용 자체는 안 옮김.
+TodoWrite 계획 상태도 여전히 과거 이력으로만 남음(미구현).
 
 ---
 
@@ -245,8 +255,9 @@ Codex `developer` role(권한·협업모드 preamble)은 normalized `system`으�
 | 2.2 | dangling 도구 호출 | 매칭 없는 call에 합성 output 삽입 | dangling 6→0, 테스트 추가 |
 | 2.3 | 블록 순서 평탄화 | 원본 순서 보존 재작성 | 순서 테스트 추가 |
 | 2.4 | 빈 call_id | 합성 id 생성 | 빈 call_id 0, 테스트 |
+| 2.7 | stale 상태(오인) | source git 캡처+preamble 스냅샷+불일치 경고 | 테스트 2개, 라이브 캡처 |
 
-→ 전체 스위트 **46/46 통과**, 빌드 clean.
+→ 전체 스위트 **48/48 통과**, 빌드 clean.
 
 ### ❌ 그래도 안 되는 것 (수정 후에도 남음)
 **완화만 가능(B) — "transcript만 옮긴다"는 본질**
@@ -259,8 +270,8 @@ Codex `developer` role(권한·협업모드 preamble)은 normalized `system`으�
   같은 실입력만 선별 복구 가능(미구현).
 - **숨은 컨텍스트(1.2)**: CLAUDE.md/AGENTS.md는 export 시 디스크에서 읽어 동봉
   가능(미구현). 시스템 프롬프트·MCP 목록은 기록만.
-- **stale 상태(2.7)**: cwd/branch/commit 캡처+불일치 경고로 *안전*하게 할 수
-  있음(미구현). 상태 전이 자체는 불가.
+- **stale 상태(2.7)**: ✅ git 캡처+스냅샷+불일치 경고 구현됨. 단 상태 *전이*가
+  아니라 *알림*이며, TodoWrite 계획 상태는 여전히 미구현.
 - **`[error]` 모호성(2.5)**, **role 붕괴(2.6)**, **분기 소실(1.4)**: 완화 여지
   있으나 손실 0 불가.
 

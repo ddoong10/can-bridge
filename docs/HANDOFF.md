@@ -3,6 +3,52 @@
 Use this file to pass work between Claude Code, Codex, and other agents. New
 entries go at the top.
 
+## 2026-06-03 - Claude Code (repo-state verification, #3)
+
+### Status
+
+Implemented Codex-recommended #3: capture the source workspace's git state on
+extract, embed it in the Codex import preamble, and warn when the target
+workspace has moved since capture. We transfer a transcript, never the files —
+this makes stale-state mismatches visible instead of silent.
+
+### Changed
+
+- `src/schema/context.ts`: `SourceInfo.git?: GitState { branch, commit, dirty }`.
+- `src/util/git.ts` (new): `captureGitState(cwd)` (best-effort, bounded timeout,
+  null when not a git work tree / git absent), `formatGitState`,
+  `gitMismatchWarning(source, current)`.
+- `claude-code.ts` / `codex.ts` extract: populate `source.git` from the source
+  cwd at export time.
+- `codex.ts` inject: base_instructions now include "Source workspace" + "Source
+  git state at capture"; inject probes the *current* target cwd and prepends
+  `⚠️ Workspace moved since capture …` to the hint when commit/branch differ
+  (also surfaced as `details.gitMismatch`).
+- `tests/smoke.test.mjs`: +2 tests (mismatch logic; inject snapshot).
+
+### Verification
+
+- Build clean, **48/48** smoke tests pass.
+- Live: `captureGitState(repo)` → `main @ 5f4c76a (dirty)`; mismatch vs an old
+  commit warns.
+
+### Codex review (gpt-5.5) — all 5 findings applied
+
+- [HIGH] mismatch warning now also embedded in `base_instructions` (not just the
+  hint), so the resumed agent sees it.
+- [HIGH] dirty-flag change now triggers a warning (not only commit/branch).
+- [MED] "could not verify" warning when source had git state but the target
+  can't be read (no longer looks like a safe match).
+- [MED] no longer runs git against the transcript-provided `cwd`; both extract
+  and inject probe `process.cwd()` only, plus `core.fsmonitor=`/`GIT_OPTIONAL_LOCKS=0`
+  hardening against config-triggered execution.
+- [MED] detached HEAD handled via `git branch --show-current`; commit is the
+  primary mismatch signal so a branch-only difference at the same commit no
+  longer false-positives.
+
+Re-verified: build clean, 48/48 pass; live inject embeds the warning in both
+base_instructions and the hint.
+
 ## 2026-06-03 - Claude Code (context-preservation pass)
 
 ### Status

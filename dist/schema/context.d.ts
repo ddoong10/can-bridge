@@ -54,4 +54,18 @@ export interface SourceInfo {
     capturedAt?: string;
     /** Working directory of the original session, if known. */
     cwd?: string;
+    /**
+     * Git state of `cwd` at capture (export) time, when it is a git repo.
+     * Lets the target warn if the workspace has since moved, since we transfer
+     * a transcript — never the actual files. Absent when not a repo / git
+     * unavailable.
+     */
+    git?: GitState;
+}
+export interface GitState {
+    branch?: string;
+    /** Short HEAD sha. */
+    commit?: string;
+    /** True when there were uncommitted changes at capture time. */
+    dirty?: boolean;
 }
